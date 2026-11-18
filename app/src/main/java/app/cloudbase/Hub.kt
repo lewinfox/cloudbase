@@ -43,7 +43,24 @@ object Hub {
         airspace = AirspaceRepo(File(app.filesDir, "airspace"))
         applySettings()
         airspace.load(settings.countries)
+        seedAirspace()
     }
+
+    /**
+     * First run: fetch New Zealand airspace without being asked, so the app is never flown with
+     * an empty airspace map by accident. Retried on each launch until it succeeds once.
+     */
+    private fun seedAirspace() {
+        if (settings.airspaceSeeded) return
+        airspace.download(HOME_COUNTRY) { error ->
+            if (error != null) return@download
+            settings.airspaceSeeded = true
+            settings.countries = settings.countries + HOME_COUNTRY
+            airspace.load(settings.countries)
+        }
+    }
+
+    const val HOME_COUNTRY = "nz"
 
     /** Push settings into the flight computer. Call after any setting changes. */
     fun applySettings() {

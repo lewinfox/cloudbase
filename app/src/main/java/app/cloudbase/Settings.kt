@@ -26,9 +26,12 @@ class Settings(context: Context) {
     var showSideView: Boolean by Bool("side_view", true)
     var showThermals: Boolean by Bool("thermals", true)
     var demo: Boolean by Bool("demo", false)
-    var mapLat: Double by Num("map_lat", 46.0, allowNonPositive = true)
-    var mapLon: Double by Num("map_lon", 7.0, allowNonPositive = true)
-    var mapZoom: Double by Num("map_zoom", 12.0)
+    // Until the first GPS fix the map opens on New Zealand, which is where this app is flown.
+    var mapLat: Double by Num("map_lat", -41.5, allowNonPositive = true)
+    var mapLon: Double by Num("map_lon", 173.0, allowNonPositive = true)
+    var mapZoom: Double by Num("map_zoom", 6.0)
+    /** False until the first-run airspace download has been attempted successfully. */
+    var airspaceSeeded: Boolean by Bool("airspace_seeded", false)
 
     /** Country codes whose airspace files are loaded. */
     var countries: Set<String>

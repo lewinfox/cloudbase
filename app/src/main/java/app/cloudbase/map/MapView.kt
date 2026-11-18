@@ -11,12 +11,14 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import app.cloudbase.core.Geo
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sin
 
 /**
  * North-up slippy map. Redraws only on input, [setCenter] or tile arrival: no timers, no animation.
@@ -59,13 +61,18 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
             metresPerPixel = Mercator.metresPerPixel(lat, zoom)
         }
 
+        // x and y are called per vertex by overlays (thousands of times a frame), so they use the
+        // cached world size rather than Mercator's general functions, which recompute 2^zoom.
         fun x(lon: Double): Float {
-            var dx = Mercator.x(lon, zoom) - cx
+            var dx = (lon + 180.0) / 360.0 * world - cx
             if (dx > world / 2) dx -= world else if (dx < -world / 2) dx += world
             return (width / 2.0 + dx).toFloat()
         }
 
-        fun y(lat: Double): Float = (height / 2.0 + Mercator.y(lat, zoom) - cy).toFloat()
+        fun y(lat: Double): Float {
+            val s = sin(lat.coerceIn(-Mercator.MAX_LAT, Mercator.MAX_LAT) * (PI / 180.0))
+            return (height / 2.0 + (0.5 - ln((1 + s) / (1 - s)) / (4 * PI)) * world - cy).toFloat()
+        }
 
         fun lat(y: Float): Double = Mercator.lat(cy + y - height / 2.0, zoom)
 

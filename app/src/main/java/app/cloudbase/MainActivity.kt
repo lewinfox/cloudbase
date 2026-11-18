@@ -90,7 +90,6 @@ class MainActivity : Activity() {
             onFollowChanged = { following -> recenter.visibility = if (following) View.GONE else View.VISIBLE }
             onTap = { lat, lon -> showAirspaceAt(lat, lon) }
         }
-        layer.onTileLoaded = { map.invalidate() }
         Hub.elevation.onTileLoaded = { lastVersion = -1 }
         Hub.airspace.onChanged = { airspaceChanged(); page?.rebuild() }
 
@@ -154,7 +153,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        layer.onTileLoaded = null
         Hub.elevation.onTileLoaded = null
         Hub.airspace.onChanged = null
         layer.shutdown()
