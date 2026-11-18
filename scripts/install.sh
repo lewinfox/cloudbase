@@ -68,18 +68,18 @@ release=$(prop ro.build.version.release)
 api=$(prop ro.build.version.sdk)
 go=""; [ "$(prop ro.config.low_ram)" = "true" ] && go=" (Go edition)"
 say "Phone: ${bold}${model}${off}, Android ${release}${go}, API ${api}"
-[ "${api:-0}" -ge 21 ] || fail "Cloudbase needs Android 5.0 (API 21) or newer."
+[ "${api:-0}" -ge 26 ] || fail "Cloudbase needs Android 8.0 (API 26) or newer."
 
 # --- Build -----------------------------------------------------------------------------
 first=$(printf '%s' "${VARIANT:0:1}" | tr '[:lower:]' '[:upper:]')
 say "Building ${VARIANT}…"
-./gradlew --quiet "assemble${first}${VARIANT:1}"
+./gradlew --quiet ":app:assemble${first}${VARIANT:1}"
 APK="app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
 [ -f "$APK" ] || fail "Build finished but $APK is missing."
 say "Built $APK ($(du -k "$APK" | cut -f1) KB)"
 
 # --- Install ---------------------------------------------------------------------------
-grant=""; [ "$api" -ge 23 ] && grant="-g"   # pre-grant Bluetooth and notification permissions
+grant=""; [ "$api" -ge 23 ] && grant="-g"   # pre-grant location and notification permissions
 say "Installing (slow phones can take a minute)…"
 if ! out=$(adb_s install -r $grant "$APK" 2>&1); then
   echo "$out" >&2
@@ -90,7 +90,7 @@ if ! out=$(adb_s install -r $grant "$APK" 2>&1); then
   esac
 fi
 
-# It runs unattended in the car, so stop Android from putting it to sleep.
+# A flight log must not be killed mid-air by battery optimisation.
 if [ "$api" -ge 23 ]; then
   adb_s shell dumpsys deviceidle whitelist +"$PKG" >/dev/null 2>&1 && say "Exempted from battery optimisation"
 fi

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A canopy and pilot under a flat cloud base. Drawn inside the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M30,36 h48 a4,4 0 0,1 0,8 h-48 a4,4 0 0,1 0,-8 Z" android:fillAlpha="0.55" />
+    <path android:fillColor="#FFFFFF" android:pathData="M32,60 C38,46 70,46 76,60 C66,55 42,55 32,60 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.6" android:pathData="M36,59 L54,76 L72,59 M46,56.5 L54,76 L62,56.5" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,77 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0" />
+</vector>

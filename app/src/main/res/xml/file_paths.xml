@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="flights" path="flights/" />
+    <files-path name="flights_internal" path="flights/" />
+</paths>
