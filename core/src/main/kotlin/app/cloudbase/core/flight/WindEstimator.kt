@@ -153,6 +153,12 @@ class WindEstimator(trimSpeedMs: Double = 10.5) {
         if (fitTrim(tas, iMin, iMax)) {
             val rms = sqrt(fitSse / wn)
             val q = 0.5 * minOf(1.0, coverage / CIRCLE_COVERAGE_DEG) * (1.0 - rms / MAX_TRIM_RMS)
+            // A measured wind beats an assumed airspeed. Pilots fly glides on speed bar, where the
+            // trim assumption is wrong, and a fit arrives every second: left unchecked, a minute of
+            // biased TRIM fits would wash out a good CIRCLE measurement. So TRIM only contributes
+            // once the circle-derived estimate has aged below what TRIM itself can offer.
+            val prior = if (hasEstimate) sQuality * decay(nowMs - sTimeMs) else 0.0
+            if (sCircleShare >= 0.5 && prior > q) return
             merge(fitCx, fitCy, tas, q.coerceIn(MIN_QUALITY, 1.0), WindMethod.TRIM, nowMs)
         }
     }

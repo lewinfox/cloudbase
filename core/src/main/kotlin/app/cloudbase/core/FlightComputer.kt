@@ -156,7 +156,9 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         lastTrack = f.track
 
         val v = climb
-        val event = if (autoRecord) detector.update(f.timeMs, f.speed, v, agl) else null
+        // Climb rate from GPS altitude alone is too noisy (±0.6 m/s standing still) to tell the
+        // detector anything; without a barometer it works from speed and height above ground.
+        val event = if (autoRecord) detector.update(f.timeMs, f.speed, if (hasBaro) v else Double.NaN, agl) else null
         val flying = detector.state == FlightState.FLYING
 
         val w = wind.estimate(f.timeMs)
