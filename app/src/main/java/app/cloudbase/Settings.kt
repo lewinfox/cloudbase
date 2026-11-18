@@ -27,6 +27,8 @@ class Settings(context: Context) {
     var keepScreenOn: Boolean by Bool("keep_screen_on", true)
     var showSideView: Boolean by Bool("side_view", true)
     var showThermals: Boolean by Bool("thermals", true)
+    /** Colour scale for rising air on the thermal map: "TURBO", "VIRIDIS" or "HEAT". */
+    var liftColours: String by Str("lift_colours", "TURBO")
     /** Line on the map to where the present glide meets the ground. */
     var showGlide: Boolean by Bool("glide_line", true)
     /** Zoom the map in close while circling in a thermal. */

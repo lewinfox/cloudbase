@@ -14,6 +14,7 @@ import app.cloudbase.core.Atmosphere
 import app.cloudbase.core.igc.IgcTrack
 import app.cloudbase.core.pressureAt
 import app.cloudbase.ui.GlyphButton
+import app.cloudbase.ui.HeatGrid
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -110,6 +111,13 @@ class ScreenshotTest {
         Hub.applySettings()
         act.airspaceChanged()
         flyToWithTerrain(1060); snap(act, "1-thermalling")
+        // The same moment in each lift colour scale, for choosing between them.
+        for (p in HeatGrid.Palette.values()) {
+            Hub.settings.liftColours = p.name
+            act.airspaceChanged() // forces a repaint
+            snap(act, "palette-${p.name.lowercase()}")
+        }
+        Hub.settings.liftColours = "TURBO"
         flyToWithTerrain(1575); snap(act, "3-glide-to-ground")
         flyTo(Int.MAX_VALUE) // land, so the logbook has a finished flight in it
 

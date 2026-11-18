@@ -137,6 +137,11 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
             choose("Speed in", listOf("km/h", "knots", "mph"), speeds.indexOf(s.speedUnit).coerceAtLeast(0)) { s.speedUnit = speeds[it] }
         }
         toggle("Thermal heat map", s.showThermals) { s.showThermals = it }
+        val palettes = HeatGrid.Palette.values()
+        val current = palettes.indexOfFirst { it.name == s.liftColours }.coerceAtLeast(0)
+        row("Lift colours", palettes[current].label) {
+            choose("Colours for rising air", palettes.map { it.label }, current) { s.liftColours = palettes[it].name }
+        }
         toggle("Zoom in when thermalling", s.thermalZoom) { s.thermalZoom = it }
         toggle("Glide-to-ground line", s.showGlide) { s.showGlide = it }
         toggle("Side view", s.showSideView) { s.showSideView = it; act.applyLayout() }

@@ -40,11 +40,11 @@ is carrying you on the map.
 **Map.** North-up topographic map. Airspace you must stay out of is outlined blue (controlled)
 or red (restricted, danger, military); informational airspace is thin grey. Press and hold on an
 airspace for its limits, or to ignore it. **Tap the map once to zoom in, twice to zoom out**
-(made for gloves; the + and − buttons and pinch work too). The coloured cloud is the **thermal map**. Rising air runs through
-six colours, hotter and deeper as it gets stronger: pale yellow, yellow (about 0.7 m/s), orange
-(1.5, roughly where you start to climb), red (2.5), crimson (4) and deep crimson. Sinking air
-is the violet family, from violet (weak) through indigo to near-black (strong). Neither has
-green or grey-blue in it, so it does not blend into the map. It drifts downwind with the air; the red ring marks the best lift nearby. That drift only lasts
+(made for gloves; the + and − buttons and pinch work too). The coloured cloud is the **thermal map**. Sinking air is the
+violet family, from violet (weak) through indigo to near-black (strong). Rising air uses the
+scale chosen in **Settings → Lift colours**: *Rainbow* (turquoise, green, yellow, orange, red,
+dark red as it strengthens; the default), *Viridis* (teal, green, bright yellow) or *Heat*
+(pale yellow, orange, red, crimson; no greens). It drifts downwind with the air; the red ring marks the best lift nearby. That drift only lasts
 five minutes, long enough to centre the climb you are in. After that a patch is shown, faded,
 at the ground location where you met it, and stays there for the rest of the flight: thermals
 come off terrain, so the place is what is worth remembering. The map **zooms in close when you start circling** and back out when you leave.

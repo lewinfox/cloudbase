@@ -114,8 +114,7 @@ class AirspaceOverlay(context: Context) : MapView.Overlay {
 
 /**
  * The lift/sink heat map: a smooth cloud over the air that has been flown through, violet to
- * near-black where it was sinking, and pale yellow through orange and red to crimson where it
- * was rising.
+ * near-black where it was sinking, and the pilot's choice of colour scale where it was rising.
  *
  * Every thermal-map cell sits on one regular lattice (they all drift together), so the cells map
  * straight onto the pixels of a small bitmap, which [HeatGrid] smooths and the canvas scales up.
@@ -149,6 +148,7 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
         proj = LocalProjection(midLat, midLon)
         cell = live.cellM
         hasPhase = false
+        HeatGrid.palette = HeatGrid.Palette.values().firstOrNull { it.name == Hub.settings.liftColours } ?: HeatGrid.Palette.TURBO
         grid.clear()
         val half = SIZE / 2 * cell
         val s = proj.lat(-half); val w = proj.lon(-half); val n = proj.lat(half); val e = proj.lon(half)

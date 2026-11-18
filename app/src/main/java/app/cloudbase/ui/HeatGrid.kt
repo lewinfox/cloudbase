@@ -60,6 +60,26 @@ class HeatGrid(val n: Int) {
         }
     }
 
+    /**
+     * Lift is the side a pilot actually reads, and which colours read best is a matter of
+     * eyes, screen and sunlight, so there is a choice. Every ramp starts well away from
+     * violet, so up and down are never confused.
+     */
+    enum class Palette(val label: String, internal val ramp: IntArray) {
+        /**
+         * The upper part of the "turbo" rainbow: turquoise, green, lime, yellow, orange, red,
+         * dark red. The most distinct colours of the three, and the strongest lift is the
+         * hottest and deepest.
+         */
+        TURBO("Rainbow", intArrayOf(0x27D7C4, 0x4DF884, 0x95FB51, 0xDEDD32, 0xFFA423, 0xF65F18, 0xBA2208, 0x900C00)),
+
+        /** The upper part of viridis: teal, green, lime, bright yellow. Steadily brighter as lift strengthens. */
+        VIRIDIS("Viridis", intArrayOf(0x21918C, 0x28AE80, 0x5EC962, 0xADDC30, 0xFDE725)),
+
+        /** Pale yellow, yellow, orange, red, crimson, deep crimson. No greens, so nothing in common with the map. */
+        HEAT("Heat", intArrayOf(0xFFF3A0, 0xFFD600, 0xFF9800, 0xFF3D00, 0xD50032, 0x8E0045)),
+    }
+
     companion object {
         private const val R = 2
         /** Binomial approximation of a Gaussian, sigma about one cell. */
@@ -70,20 +90,13 @@ class HeatGrid(val n: Int) {
         const val ALPHA = 225
 
         /**
-         * Two colour families, so whether the air is going up or down is the first thing you see.
-         * Neither has green or grey-blue in it, which are the colours of the map underneath.
-         * Each ramp is listed weakest to strongest.
-         *
-         * Sink: violet through indigo to near-black.
-         *
-         * Lift, the side a pilot actually reads, gets more colours and more of them spent across
-         * the range that matters: pale yellow and yellow (air rising, but not yet faster than the
-         * glider sinks), orange (about where you start to climb), red, crimson, deep crimson.
-         * Stronger is hotter, deeper and more intense: that is the shade the eye wants to turn
-         * towards, and it is also the most visible thing on a pale map.
+         * Sink is always the violet family: violet through indigo to near-black. Listed weakest
+         * to strongest, as are the lift ramps.
          */
         private val SINK = intArrayOf(0x9A35E8, 0x6A1FD0, 0x3F14A8, 0x1E0B6B, 0x0B0433)
-        private val LIFT = intArrayOf(0xFFF3A0, 0xFFD600, 0xFF9800, 0xFF3D00, 0xD50032, 0x8E0045)
+
+        /** The lift ramp in use. Set from Settings; main thread only, like all drawing. */
+        var palette = Palette.TURBO
 
         /** Sigmoid scales, m/s: 76 % of a ramp is used by this much. Sink saturates early; lift is spread wide. */
         const val SINK_SCALE = 2.0f
@@ -93,15 +106,14 @@ class HeatGrid(val n: Int) {
          * How far along its ramp a climb or sink value sits, 0..1. A sigmoid (tanh): the colour
          * range is spent on ordinary values where telling them apart matters, and extreme values
          * flatten out towards the end instead of all looking the same shade past a hard limit.
-         * With [LIFT_SCALE] the lift colours fall at roughly: yellow 0.7 m/s, orange 1.5, red 2.5,
-         * crimson 4, deep crimson beyond 6.
+         * With [LIFT_SCALE], half of a lift ramp is used by about 1.9 m/s and three quarters by 3.5.
          */
         fun strength(climb: Float): Float = tanh(abs(climb) / if (climb > 0) LIFT_SCALE else SINK_SCALE)
 
         /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area and old samples. */
         fun color(climb: Float, coverage: Float): Int {
             if (abs(climb) <= DEAD_BAND || coverage <= 0f) return 0
-            val ramp = if (climb > 0) LIFT else SINK
+            val ramp = if (climb > 0) palette.ramp else SINK
             val pos = strength(climb) * (ramp.size - 1)
             val k = min(pos.toInt(), ramp.size - 2)
             val f = pos - k
