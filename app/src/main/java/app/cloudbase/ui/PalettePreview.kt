@@ -2,6 +2,7 @@ package app.cloudbase.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -19,15 +20,21 @@ import app.cloudbase.ui.Theme.sp
 
 /**
  * What the thermal map looked like a third of the way into the demo flight (a real one: a climb,
- * with sink on the way in), kept as plain numbers so it can be drawn in any colour scale. The
+ * with sink on the way in), kept as plain numbers so it can be drawn in any colour scale, and
+ * the piece of real map it happened over. The
  * settings page shows it once per scale so the choice is made on real air, not on a legend.
  */
 object PaletteSample {
     const val SIZE = 48
     /** Seconds into the recorded flight: circling in the climb at Coronet Peak. */
     private const val AT_S = 1060
+    private const val MAP_ASSET = "preview_map.jpg"
 
-    class Data(val ix: IntArray, val iy: IntArray, val climb: FloatArray, val weight: FloatArray, val trackX: FloatArray, val trackY: FloatArray)
+    /** [map] is the real map under exactly this window (tools/make_preview_map.py), or null if it could not be read. */
+    class Data(
+        val ix: IntArray, val iy: IntArray, val climb: FloatArray, val weight: FloatArray,
+        val trackX: FloatArray, val trackY: FloatArray, val map: Bitmap?,
+    )
 
     @Volatile var data: Data? = null
         private set
@@ -74,7 +81,11 @@ object PaletteSample {
         val trail = c.trail
         val tx = FloatArray(trail.size) { k -> (proj.x(trail.lon(k)) / cell).toFloat() + SIZE / 2 }
         val ty = FloatArray(trail.size) { k -> SIZE / 2 - (proj.y(trail.lat(k)) / cell).toFloat() }
-        return Data(ix.toIntArray(), iy.toIntArray(), climb.toFloatArray(), weight.toFloatArray(), tx, ty)
+        // How a colour scale reads depends on what is underneath, so the previews sit on the real map.
+        val map = try {
+            context.assets.open(MAP_ASSET).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }) }
+        } catch (e: Exception) { null }
+        return Data(ix.toIntArray(), iy.toIntArray(), climb.toFloatArray(), weight.toFloatArray(), tx, ty, map)
     }
 }
 
@@ -83,7 +94,7 @@ class PalettePreview(context: Context, private val palette: HeatGrid.Palette, pr
     private val bitmap = Bitmap.createBitmap(PaletteSample.SIZE, PaletteSample.SIZE, Bitmap.Config.ARGB_8888)
     private var rendered = false
     private val filter = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val ground = Paint().apply { color = Color.parseColor("#E4E7E0") } // about the tone of the map's hill shading
+    private val ground = Paint().apply { color = Color.parseColor("#E4E7E0") } // shown until the map image has loaded
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.argb(170, 16, 42, 67); strokeWidth = context.dp(1.3f) }
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = if (selected) Theme.ACCENT else Theme.LINE; strokeWidth = context.dp(if (selected) 3f else 1f) }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.TEXT; textSize = context.sp(15f); typeface = Theme.CONDENSED_BOLD }
@@ -131,6 +142,7 @@ class PalettePreview(context: Context, private val palette: HeatGrid.Palette, pr
             dst.set(0f, top, side, top + side)
             canvas.save()
             canvas.clipRect(0f, 0f, width.toFloat(), pictureH)
+            d.map?.let { canvas.drawBitmap(it, null, dst, filter) }
             canvas.drawBitmap(bitmap, null, dst, filter)
             val k = side / PaletteSample.SIZE
             track.rewind()

@@ -140,6 +140,7 @@ to share or upload it.
 - `app/` — Android: `FlightService` (GPS, sensors, demo), `map/` (tile view, cache, terrain
   elevation), `ui/` (instruments, overlays, side view, settings pages).
 - `tools/make_geoid.py` regenerates the geoid grid from the NGA EGM96 data.
+- `tools/make_preview_map.py` regenerates the map image behind the thermal-colour previews.
 
 Map © OpenStreetMap contributors, SRTM; map style © OpenTopoMap (CC-BY-SA). Terrain: Mapzen
 terrain tiles on AWS. Airspace: openAIP.

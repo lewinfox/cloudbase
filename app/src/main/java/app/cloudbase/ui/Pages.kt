@@ -355,7 +355,7 @@ class OfflinePage(act: MainActivity) : Page(act, "Offline maps") {
 class ColoursPage(act: MainActivity) : Page(act, "Thermal colours") {
     override fun build() {
         val s = Hub.settings
-        note("The same climb from the demo flight, drawn in each scale. The bar under each shows sink on the left and lift on the right, in m/s. Tap one to use it.")
+        note("The same climb from the demo flight, drawn in each scale over the real map. The bar under each shows sink on the left and lift on the right, in m/s. Tap one to use it.")
         // The sample is worked out once, off the main thread; the tiles fill in when it is ready.
         PaletteSample.load(act, { r -> list.post(r) }) { rebuild() }
         for (p in HeatGrid.Palette.values()) {
