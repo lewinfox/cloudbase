@@ -62,10 +62,10 @@ class HeatGrid(val n: Int) {
 
     /**
      * Lift is the side a pilot actually reads, and which colours read best is a matter of
-     * eyes, screen and sunlight, so there is a choice. Every ramp starts well away from
-     * violet, so up and down are never confused.
+     * eyes, screen and sunlight, so there is a choice. Except for [PLASMA], every lift ramp
+     * starts well away from violet, so up and down are never confused.
      */
-    enum class Palette(val label: String, internal val ramp: IntArray) {
+    enum class Palette(val label: String, internal val ramp: IntArray, internal val sink: IntArray? = null) {
         /**
          * The upper part of the "turbo" rainbow: turquoise, green, lime, yellow, orange, red,
          * dark red. The most distinct colours of the three, and the strongest lift is the
@@ -78,6 +78,14 @@ class HeatGrid(val n: Int) {
 
         /** Pale yellow, yellow, orange, red, crimson, deep crimson. No greens, so nothing in common with the map. */
         HEAT("Heat", intArrayOf(0xFFF3A0, 0xFFD600, 0xFF9800, 0xFF3D00, 0xD50032, 0x8E0045)),
+
+        /**
+         * The whole "plasma" map as one continuous scale: deep indigo (strong sink) through purple
+         * and magenta, then salmon and orange to bright yellow (strong lift), steadily brighter all
+         * the way. The only choice that also recolours sink, and the only one where weak sink and
+         * weak lift are neighbouring shades rather than different families.
+         */
+        PLASMA("Plasma", intArrayOf(0xDB5C68, 0xF48849, 0xFEBC2A, 0xF0F921), sink = intArrayOf(0xB93289, 0x8B0AA5, 0x5402A3, 0x0D0887)),
     }
 
     companion object {
@@ -90,8 +98,8 @@ class HeatGrid(val n: Int) {
         const val ALPHA = 225
 
         /**
-         * Sink is always the violet family: violet through indigo to near-black. Listed weakest
-         * to strongest, as are the lift ramps.
+         * Sink is the violet family unless the palette brings its own: violet through indigo to
+         * near-black. Listed weakest to strongest, as are the lift ramps.
          */
         private val SINK = intArrayOf(0x9A35E8, 0x6A1FD0, 0x3F14A8, 0x1E0B6B, 0x0B0433)
 
@@ -113,7 +121,7 @@ class HeatGrid(val n: Int) {
         /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area and old samples. */
         fun color(climb: Float, coverage: Float): Int {
             if (abs(climb) <= DEAD_BAND || coverage <= 0f) return 0
-            val ramp = if (climb > 0) palette.ramp else SINK
+            val ramp = if (climb > 0) palette.ramp else palette.sink ?: SINK
             val pos = strength(climb) * (ramp.size - 1)
             val k = min(pos.toInt(), ramp.size - 2)
             val f = pos - k

@@ -34,7 +34,9 @@ class HeatGridTest {
                 // (Viridis is the gentlest: its weak end moves slowly from teal to green.)
                 assertTrue("$p: %.1f and %.1f m/s differ by only %.0f".format(steps[i], steps[i + 1], d), d > 25)
             }
-            // Up is never mistaken for down, weak or strong.
+            // Up is never mistaken for down, weak or strong. (Plasma is one continuous scale by
+            // design, so its weak lift and weak sink are neighbours: checked separately below.)
+            if (p == HeatGrid.Palette.PLASMA) continue
             var v = 0.25f
             while (v <= 8f) {
                 for (w in listOf(0.25f, 1f, 2f, 4f, 8f)) {
@@ -70,6 +72,24 @@ class HeatGridTest {
         assertTrue("2.5 m/s is red: %06X".format(rgb(red)), r(red) > 230 && g(red) < 100 && b(red) < 40)
         assertTrue("4 m/s is crimson: %06X".format(rgb(crimson)), r(crimson) in 190..230 && g(crimson) < 30)
         assertTrue("very strong is deep crimson: %06X".format(rgb(deep)), r(deep) in 130..170 && g(deep) < 15)
+    }
+
+    @Test fun plasmaIsOneScaleBrighteningFromStrongSinkToStrongLift() {
+        HeatGrid.palette = HeatGrid.Palette.PLASMA
+        var last = -1.0
+        var v = -8f
+        while (v <= 8f) {
+            // (Colour channels are whole numbers, so allow a rounding step.)
+            if (abs(v) > HeatGrid.DEAD_BAND) { val l = luma(col(v)); assertTrue("brightness at $v: $l after $last", l >= last - 1.5); last = l }
+            v += 0.1f
+        }
+        assertTrue(luma(col(-6f)) < 45)
+        assertTrue(luma(col(8f)) > 190)
+        // Sink is recoloured too, and differs from the violet the other palettes share.
+        HeatGrid.palette = HeatGrid.Palette.TURBO
+        val violet = col(-0.5f)
+        HeatGrid.palette = HeatGrid.Palette.PLASMA
+        assertTrue(distance(violet, col(-0.5f)) > 60)
     }
 
     @Test fun viridisGetsSteadilyBrighter() {

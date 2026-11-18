@@ -265,6 +265,9 @@ class MainActivity : Activity() {
             .setPositiveButton("Stop and exit") { _, _ -> exit() }.setNegativeButton("Keep flying", null).show()
     }
 
+    /** Show a page over the map; used by pages that lead to further pages. */
+    fun openPage(p: Page) = open(p)
+
     private fun open(p: Page) {
         closePage()
         page = p

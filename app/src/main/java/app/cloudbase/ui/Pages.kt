@@ -137,11 +137,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
             choose("Speed in", listOf("km/h", "knots", "mph"), speeds.indexOf(s.speedUnit).coerceAtLeast(0)) { s.speedUnit = speeds[it] }
         }
         toggle("Thermal heat map", s.showThermals) { s.showThermals = it }
-        val palettes = HeatGrid.Palette.values()
-        val current = palettes.indexOfFirst { it.name == s.liftColours }.coerceAtLeast(0)
-        row("Lift colours", palettes[current].label) {
-            choose("Colours for rising air", palettes.map { it.label }, current) { s.liftColours = palettes[it].name }
-        }
+        val palette = HeatGrid.Palette.values().firstOrNull { it.name == s.liftColours } ?: HeatGrid.Palette.TURBO
+        row("Thermal colours", palette.label) { act.openPage(ColoursPage(act)) }
         toggle("Zoom in when thermalling", s.thermalZoom) { s.thermalZoom = it }
         toggle("Glide-to-ground line", s.showGlide) { s.showGlide = it }
         toggle("Side view", s.showSideView) { s.showSideView = it; act.applyLayout() }
@@ -351,5 +348,22 @@ class OfflinePage(act: MainActivity) : Page(act, "Offline maps") {
         const val MAX_TILES = 6000
         const val AVERAGE_TILE_BYTES = 30_000.0
         val LIMITS_MB = listOf(250, 500, 1000, 2000)
+    }
+}
+
+/** Choose the thermal map's colour scale by looking at each one on a real piece of flight. */
+class ColoursPage(act: MainActivity) : Page(act, "Thermal colours") {
+    override fun build() {
+        val s = Hub.settings
+        note("The same climb from the demo flight, drawn in each scale. The bar under each shows sink on the left and lift on the right, in m/s. Tap one to use it.")
+        // The sample is worked out once, off the main thread; the tiles fill in when it is ready.
+        PaletteSample.load(act, { r -> list.post(r) }) { rebuild() }
+        for (p in HeatGrid.Palette.values()) {
+            val tile = PalettePreview(act, p, selected = p.name == s.liftColours)
+            tile.contentDescription = p.label + if (p.name == s.liftColours) ", selected" else ""
+            tile.setOnClickListener { s.liftColours = p.name; act.airspaceChanged(); rebuild() }
+            list.addView(tile, LinearLayout.LayoutParams(-1, -2).apply { topMargin = act.dp(10) })
+        }
+        note("Rainbow has the most distinct colours. Viridis gets steadily brighter with lift. Heat uses no greens, so it has nothing in common with the map. Plasma is one continuous scale and is the only one that also changes the sink colours.")
     }
 }
