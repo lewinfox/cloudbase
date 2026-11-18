@@ -83,8 +83,10 @@ class AirspacePolicyTest {
             assertEquals("type $t", Relevance.HIDE, rel("UNC", t))
             assertEquals("class $t", Relevance.HIDE, rel(t))
         }
-        // Hide wins over an alerting class.
-        assertEquals(Relevance.HIDE, rel("C", "AWY"))
+        // A controlled class wins over a clutter type: a class C airway is not somewhere to be.
+        assertEquals(Relevance.ALERT, rel("C", "AWY"))
+        assertEquals(Relevance.HIDE, rel("E", "AWY"))
+        // ...but for everything else hide wins over an alerting class.
         assertEquals(Relevance.HIDE, rel("A", "FIR"))
     }
 
@@ -124,12 +126,12 @@ class AirspacePolicyTest {
     }
 
     @Test
-    fun nzCommonFrequencyAndMandatoryBroadcastZonesAreOnlyShown() {
-        assertEquals(Relevance.SHOW, rel("B", "", "NZC571 WAIRARAPA CFZ"))
-        assertEquals(Relevance.SHOW, rel("B", "", "NZC175, HIKURANGI CFZ"))
+    fun commonFrequencyZonesAreHiddenAndMandatoryBroadcastZonesOnlyShown() {
+        assertEquals(Relevance.HIDE, rel("B", "", "NZC571 WAIRARAPA CFZ"))
+        assertEquals(Relevance.HIDE, rel("B", "", "NZC175, HIKURANGI CFZ"))
         assertEquals(Relevance.SHOW, rel("B", "", "WAIKANAE MBZ"))
-        assertEquals(Relevance.SHOW, rel("C", "", "foo cfz"))
-        assertEquals(Relevance.SHOW, rel("B", "", "CFZ"))
+        assertEquals(Relevance.HIDE, rel("C", "", "foo cfz"))
+        assertEquals(Relevance.HIDE, rel("B", "", "CFZ"))
         assertEquals(Relevance.SHOW, rel("B", "", "FOO (MBZ) BAR"))
         // Whole word only.
         assertEquals(Relevance.ALERT, rel("B", "", "XCFZ TOWN"))
@@ -137,6 +139,29 @@ class AirspacePolicyTest {
         assertEquals(Relevance.ALERT, rel("B", "", "ROTORUA"))
         // An explicit alerting type is never demoted by the name.
         assertEquals(Relevance.ALERT, rel("B", "CTR", "ODD CFZ NAME"))
+    }
+
+    @Test
+    fun newZealandDesignatorsOverrideTheExportedClass() {
+        // As they appear in openAIP's NZ export.
+        assertEquals(Relevance.ALERT, rel("D", "CTR", "NZA756, QUEENSTOWN, CTR C"))
+        assertEquals(Relevance.ALERT, rel("C", "", "NZA733, QUEENSTOWN, CTA C"))
+        assertEquals(Relevance.SHOW, rel("A", "", "NZB971, WANAKA MBZ"))
+        assertEquals(Relevance.HIDE, rel("B", "", "NZC571 WAIRARAPA CFZ"))
+        assertEquals(Relevance.ALERT, rel("UNC", "Q", "NZD921, SOMEWHERE, MILITARY"))
+        assertEquals(Relevance.ALERT, rel("UNC", "R", "NZR901, FAUNA"))
+        assertEquals(Relevance.ALERT, rel("UNC", "P", "NZM300, WAIOURU"))
+        assertEquals(Relevance.SHOW, rel("F", "", "NZG 294 WEST HAMILTON, WAIKATO"))
+        assertEquals(Relevance.SHOW, rel("UNC", "GSEC", "NZG451, TAUPO"))
+        // Not designators: fall through to the normal rules.
+        assertEquals(Relevance.ALERT, rel("C", "", "NZ SOMETHING"))
+        assertEquals(Relevance.SHOW, rel("G", "", "NZXYZ"))
+        // Opting in to MBZ alerts.
+        val strict = AirspacePolicy(alertMbz = true)
+        assertEquals(Relevance.ALERT, strict.relevance(asp("A", "", "NZB971, WANAKA MBZ", gnd)))
+        // An NZ airspace the pilot ignored stays hidden.
+        val ignoring = AirspacePolicy(ignoredNames = setOf("NZA756, QUEENSTOWN, CTR C"))
+        assertEquals(Relevance.HIDE, ignoring.relevance(asp("D", "CTR", "NZA756, QUEENSTOWN, CTR C", gnd)))
     }
 
     @Test
