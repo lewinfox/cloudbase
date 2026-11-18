@@ -9,6 +9,7 @@ import app.cloudbase.core.airspace.MonitorConfig
 import app.cloudbase.core.igc.IgcHeader
 import app.cloudbase.map.Elevation
 import app.cloudbase.map.RegionDownloader
+import app.cloudbase.map.TileSource
 import app.cloudbase.map.TileStore
 import java.io.File
 
@@ -39,6 +40,10 @@ object Hub {
         app = context.applicationContext
         settings = Settings(app)
         tiles = TileStore(File(app.filesDir, "tiles"), "Cloudbase/${version()} (Android paragliding instrument)")
+        tiles.keepForever = setOf(TileSource.TERRARIUM.id)
+        tiles.maxBytes = (settings.mapCacheMb * 1024 * 1024).toLong()
+        // Tidy up once per launch, off the main thread: walking tens of thousands of files takes a while.
+        Thread({ tiles.trim() }, "tile-trim").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
         elevation = Elevation(tiles)
         downloader = RegionDownloader(tiles)
         computer = FlightComputer { lat, lon -> terrainAt(lat, lon) }

@@ -32,6 +32,8 @@ class Settings(context: Context) {
     /** Zoom the map in close while circling in a thermal. */
     var thermalZoom: Boolean by Bool("thermal_zoom", true)
     var demo: Boolean by Bool("demo", false)
+    /** Limit on stored map tiles, MB; the least recently used are deleted beyond it. */
+    var mapCacheMb: Double by Num("map_cache_mb", 500.0)
     // Until the first GPS fix the map opens on New Zealand, which is where this app is flown.
     var mapLat: Double by Num("map_lat", -41.5, allowNonPositive = true)
     var mapLon: Double by Num("map_lon", 173.0, allowNonPositive = true)

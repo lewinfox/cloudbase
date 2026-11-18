@@ -65,7 +65,10 @@ to share or upload it.
   vectors trace a circle whose centre is the wind. After about a full circle the app fits that
   circle and gets wind *and* true airspeed with no assumptions. Before that, from gentler
   turns, it assumes your trim speed (Settings) — shown with a `?` because it is a weaker
-  estimate. Flying straight tells it nothing.
+  estimate. Flying straight tells it nothing. Uneven turning (bank or turn rate wandering,
+  lopsided circles, reversing) does not affect it; flying consistently faster on one side of
+  every circle than the other does, one for one (1 m/s faster heading north and 1 m/s slower
+  heading south reads as 1 m/s of wind), because from the ground the two are the same thing.
 - **Thermal map.** Air-mass climb = your climb + the glider's own sink (more when banked).
   It only knows about air you have flown through.
 - **Glide line.** Uses your glide ratio *over the ground* for the last several seconds, so it
@@ -100,7 +103,9 @@ to share or upload it.
 - The screen repaints once per GPS fix, never on a free-running timer. GPS at 1 Hz, barometer
   at 20 Hz, accelerometer at 25 Hz; no gyroscope, no network location.
 - Map tiles are picked a level or two coarser on high-density screens (legible labels, a
-  quarter of the downloads), cached on disk for good, and held in a 24 MB memory cache.
+  quarter of the downloads) and held in a 24 MB memory cache. On disk they are a
+  least-recently-used cache with a size limit (500 MB by default, **Offline maps**): your usual
+  sites stay, places you looked at once are the first to go. Terrain heights are always kept.
 - One background service owns the sensors, holds a wake lock only while airborne, and stops
   itself after an hour on the ground with the screen off or the app closed (reopening the app
   starts it again).
@@ -109,7 +114,7 @@ to share or upload it.
 
 - `core/` — pure Kotlin, no Android, all the logic that can be wrong in the air: OpenAir
   parser, airspace geometry and alerting, vario filter, wind, thermal map, flight detection,
-  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (243
+  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (245
   tests) includes whole simulated flights through the full pipeline.
 - `app/` — Android: `FlightService` (GPS, sensors, demo), `map/` (tile view, cache, terrain
   elevation), `ui/` (instruments, overlays, side view, settings pages).

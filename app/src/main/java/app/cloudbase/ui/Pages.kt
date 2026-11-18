@@ -269,10 +269,23 @@ class AirspacePage(act: MainActivity) : Page(act, "Airspace") {
 class OfflinePage(act: MainActivity) : Page(act, "Offline maps") {
     private val downloader = Hub.downloader
     private var status = ""
+    /** Stored size in MB; measured off the main thread because it walks every tile file. */
+    private var storedMb = -1.0
+    private var measuring = false
 
     override fun build() {
-        note("Map and terrain tiles are kept as you view them, so anywhere you have looked at works without signal. To prepare a flying area, frame it on the map, then download it here.")
-        row("Stored on this phone", "%.0f MB".format(Hub.tiles.sizeBytes() / 1e6))
+        val s = Hub.settings
+        note("Every map tile you look at is kept on the phone, so anywhere you have viewed works without signal. To prepare a flying area in full detail, frame it on the map, then download it here.")
+        row("Stored on this phone", if (storedMb < 0) "…" else "%.0f MB".format(storedMb))
+        row("Storage limit", "${s.mapCacheMb.toInt()} MB") {
+            choose("Keep at most", LIMITS_MB.map { "$it MB" }, LIMITS_MB.indexOf(s.mapCacheMb.toInt())) {
+                s.mapCacheMb = LIMITS_MB[it].toDouble()
+                Hub.tiles.maxBytes = LIMITS_MB[it] * 1024L * 1024L
+                storedMb = -1.0
+                Thread { Hub.tiles.trim(); list.post { rebuild() } }.start()
+            }
+        }
+        note("When the limit is reached, the tiles you have gone longest without looking at are deleted first, so your usual sites stay. Terrain heights are small and are always kept.")
         if (status.isNotEmpty()) note(status)
         if (downloader.running) {
             button("Cancel download", danger = true) { downloader.cancel(); status = "Cancelled"; rebuild() }
@@ -280,28 +293,46 @@ class OfflinePage(act: MainActivity) : Page(act, "Offline maps") {
             button("Download the area on screen", primary = true) { start() }
             button("Delete all stored maps", danger = true) {
                 AlertDialog.Builder(act).setMessage("Delete all stored map and terrain tiles?")
-                    .setPositiveButton("Delete") { _, _ -> Hub.tiles.clear(); rebuild() }.setNegativeButton("Cancel", null).show()
+                    .setPositiveButton("Delete") { _, _ -> Hub.tiles.clear(); storedMb = -1.0; rebuild() }.setNegativeButton("Cancel", null).show()
             }
+        }
+        if (storedMb < 0 && !measuring) {
+            measuring = true
+            Thread {
+                val mb = Hub.tiles.sizeBytes() / 1e6
+                list.post { measuring = false; storedMb = mb; rebuild() }
+            }.start()
         }
     }
 
     private fun start() {
         val p = act.mapBounds() ?: return
-        // Terrain first: it is small, and it is what airspace-above-ground limits depend on.
-        val zooms = 9..14
-        val plan = downloader.plan(TileSource.OPEN_TOPO, p[0], p[1], p[2], p[3], zooms)
+        val plan = downloader.plan(TileSource.OPEN_TOPO, p[0], p[1], p[2], p[3], ZOOMS)
         if (plan.tiles > MAX_TILES) {
             status = "That area is too large (${plan.tiles} tiles). Zoom in and try again."
             rebuild(); return
         }
+        // A download bigger than the limit would evict its own first tiles as it went.
+        val roomFor = Hub.settings.mapCacheMb * 1e6 / AVERAGE_TILE_BYTES
+        if (plan.tiles > roomFor * 0.8) {
+            status = "That area needs about ${(plan.tiles * AVERAGE_TILE_BYTES / 1e6).toInt()} MB. Raise the storage limit first."
+            rebuild(); return
+        }
         status = "Starting…"
         rebuild()
+        // Terrain first: it is small, and it is what airspace-above-ground limits depend on.
         downloader.start(TileSource.TERRARIUM, p[0], p[1], p[2], p[3], Hub.elevation.zoom..Hub.elevation.zoom, MAX_TILES, { _, _ -> }) { _ ->
-            downloader.start(TileSource.OPEN_TOPO, p[0], p[1], p[2], p[3], zooms, MAX_TILES,
-                { done, total -> status = "Downloading $done of $total"; if (done % 20 == 0) rebuild() },
-                { ok -> status = if (ok) "Done. This area now works offline." else "Stopped before finishing; what was fetched is kept."; rebuild() })
+            downloader.start(TileSource.OPEN_TOPO, p[0], p[1], p[2], p[3], ZOOMS, MAX_TILES,
+                { done, total -> status = "Downloading $done of $total"; rebuild() },
+                { ok -> status = if (ok) "Done. This area now works offline." else "Stopped before finishing; what was fetched is kept."; storedMb = -1.0; rebuild() })
         }
     }
 
-    companion object { const val MAX_TILES = 3000 }
+    companion object {
+        /** Overview levels up to the detail shown while thermalling on most screens. */
+        val ZOOMS = 9..15
+        const val MAX_TILES = 6000
+        const val AVERAGE_TILE_BYTES = 30_000.0
+        val LIMITS_MB = listOf(250, 500, 1000, 2000)
+    }
 }
