@@ -16,5 +16,7 @@ Android paragliding instrument, flown in New Zealand. See README.md for what it 
   `AirspacePolicy`.
 - Units inside the code are SI (metres, m/s, degrees true); conversion happens only in
   `ui/Theme.kt` `Units`.
-- Nothing here has been validated on a real flight yet. Do not describe filter tuning or
-  alert timing as verified beyond the simulator.
+- `app/src/main/assets/demo_flight.igc` is the user's own real flight (track data only). It is
+  the demo, and `RealFlightTest` replays it through the whole pipeline: the only test against
+  real flying. It has no accelerometer data. Beyond that one log, nothing has been validated
+  in the air; do not describe filter tuning or alert timing as verified.

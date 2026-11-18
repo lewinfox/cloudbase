@@ -10,8 +10,9 @@ import android.widget.TextView
 import app.cloudbase.FlightService
 import app.cloudbase.Hub
 import app.cloudbase.MainActivity
-import app.cloudbase.core.Geo
-import app.cloudbase.core.flight.FlightSim
+import app.cloudbase.core.Atmosphere
+import app.cloudbase.core.igc.IgcTrack
+import app.cloudbase.core.pressureAt
 import app.cloudbase.ui.GlyphButton
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,7 +26,7 @@ import java.io.File
 import java.time.Duration
 
 /**
- * Renders the real screens during the demo flight to docs/screenshots/. Not a pass/fail test;
+ * Renders the real screens during the demo flight (a recorded real flight) to docs/screenshots/. Not a pass/fail test;
  * it is how the design gets looked at without a phone. Needs the network (map tiles) and an
  * NZ airspace file: AIRSPACE_SAMPLES=/dir/with/nz_asp_v2.txt, else it downloads one.
  * Run: ./gradlew :app:testDebugUnitTest -Pscreenshots
@@ -35,9 +36,8 @@ import java.time.Duration
 @Config(sdk = [34], qualifiers = "w360dp-h740dp-xhdpi")
 class ScreenshotTest {
     private val outDir = File(System.getProperty("screenshotDir") ?: "build/screenshots").apply { mkdirs() }
-    private lateinit var sim: FlightSim
-    private var nextBaro = 0.0
-    private var nextFix = 0.0
+    private lateinit var track: IgcTrack
+    private var index = 0
 
     private fun idle(ms: Long = 600) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
 
@@ -47,15 +47,20 @@ class ScreenshotTest {
         while (System.currentTimeMillis() < end) { Thread.sleep(100); idle(300) }
     }
 
-    private fun flyTo(timeS: Double) {
+    /** Replay the demo flight up to [seconds] after its first fix, exactly as the service does. */
+    private fun flyTo(seconds: Int) {
         val c = Hub.computer
-        while (sim.timeS < timeS && !sim.finished) {
-            sim.step(0.04)
-            val t = (sim.timeS * 1e9).toLong()
-            sim.accel.let { c.onAccel(t, it[0], it[1], it[2]) }
-            if (sim.timeS >= nextBaro) { nextBaro += 0.05; c.onPressure(t, sim.pressureHpa) }
-            if (sim.timeS >= nextFix) { nextFix += 1.0; c.onFix(sim.fix(1_795_000_000_000L)) }
+        while (index < track.size && (track.timeMs(index) - track.timeMs(0)) / 1000 <= seconds) {
+            if (track.hasPressure) c.onPressure(track.timeMs(index) * 1_000_000L, Atmosphere.pressureAt(track.pressureAlt(index)))
+            c.onFix(track.fix(index))
+            index++
         }
+    }
+
+    /** As [flyTo], but slowly over the last few fixes, so terrain tiles asked for along the way have arrived. */
+    private fun flyToWithTerrain(seconds: Int) {
+        flyTo(seconds - 12)
+        for (s in seconds - 11..seconds) { flyTo(s); settle(900) }
     }
 
     private fun snap(act: MainActivity, name: String) {
@@ -93,19 +98,20 @@ class ScreenshotTest {
         Hub.init(app)
         settle(4000)
         Hub.gpsStatus = ""
-        Hub.demoTerrain = { lat, lon ->
-            FlightService.DEMO_ELEV - 600.0 * (Geo.distance(lat, lon, FlightService.DEMO_LAT, FlightService.DEMO_LON) / 900.0).coerceAtMost(1.0)
-        }
-        sim = FlightSim(seed = 7, startLat = FlightService.DEMO_LAT, startLon = FlightService.DEMO_LON, groundElevM = FlightService.DEMO_ELEV)
+        track = app.assets.open(FlightService.DEMO_ASSET).bufferedReader().use { IgcTrack.read(it) }!!
 
-        flyTo(150.0)
+        // The whole flight is inside the Queenstown control zone, as the real one was.
+        flyTo(300)
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         settle(2000)
-        snap(act, "1-thermalling")
-        flyTo(262.0); snap(act, "2-airspace-warning")
-        flyTo(340.0); snap(act, "3-inside-airspace")
-        flyTo(790.0); snap(act, "4-glide-to-ground")
-        flyTo(1e9) // land, so the logbook has a finished flight in it
+        snap(act, "2-inside-airspace")
+        // What a pilot flying this site would do: tell the app to stop minding that zone.
+        Hub.settings.ignoredAirspaces = Hub.computer.statuses.map { it.airspace.name }.toSet()
+        Hub.applySettings()
+        act.airspaceChanged()
+        flyToWithTerrain(1060); snap(act, "1-thermalling")
+        flyToWithTerrain(1575); snap(act, "3-glide-to-ground")
+        flyTo(Int.MAX_VALUE) // land, so the logbook has a finished flight in it
 
         for ((label, name) in listOf("Flights" to "5-flights", "Airspace" to "6-airspace", "Settings" to "7-settings")) {
             find(act.window.decorView) { it is GlyphButton && it.contentDescription == "Menu" }!!.performClick()

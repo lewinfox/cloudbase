@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 import app.cloudbase.Hub
+import app.cloudbase.core.flight.WindMethod
 import app.cloudbase.ui.Theme.dp
 import app.cloudbase.ui.Theme.sp
 
@@ -58,7 +59,7 @@ class InstrumentBar(context: Context) : View(context) {
             wind = "—"; windSub = "turn to measure"; windFrom = Float.NaN
         } else {
             wind = u.speed(w.wind.speed)
-            windSub = "${compass(w.wind.fromDeg)} ${"%03d".format(Math.round(w.wind.fromDeg).toInt() % 360)}°" + if (w.quality < 0.4) " ?" else ""
+            windSub = "${compass(w.wind.fromDeg)} ${"%03d".format(Math.round(w.wind.fromDeg).toInt() % 360)}°" + if (w.method == WindMethod.TRIM || w.quality < LOW_QUALITY) " ?" else ""
             windFrom = w.wind.fromDeg.toFloat()
         }
         invalidate()
@@ -106,6 +107,12 @@ class InstrumentBar(context: Context) : View(context) {
     }
 
     companion object {
+        /**
+         * Below this even a measured wind gets a question mark. On a real flight, circle fits in
+         * rough air score 0.2 to 0.5, so the mark is kept for estimates that assume an airspeed
+         * and for measurements that have nearly aged out.
+         */
+        const val LOW_QUALITY = 0.15
         private val POINTS = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         fun compass(deg: Double): String = POINTS[(Math.round(deg / 45.0).toInt() % 8 + 8) % 8]
     }

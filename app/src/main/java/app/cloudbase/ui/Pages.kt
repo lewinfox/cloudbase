@@ -156,7 +156,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
             act.restartService()
             rebuild()
         }
-        note("Flies a simulated thermal flight from Paekākāriki at 4× speed, through the same code as real sensors. It climbs into the Wellington control area on purpose, to show the alerts. The ground in the side view is simplified.")
+        note("Replays a real 42-minute flight from Coronet Peak at 4× speed, through the same code as live sensors. It is inside the Queenstown control zone throughout, so the airspace alert shows straight away; press and hold on the zone to ignore it.")
         note("Cloudbase ${Hub.version()} · Map © OpenStreetMap contributors, SRTM; style © OpenTopoMap (CC-BY-SA) · Terrain: Mapzen/AWS terrain tiles · Airspace: openAIP (CC BY-NC 4.0)")
     }
 

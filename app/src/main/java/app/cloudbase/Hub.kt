@@ -71,11 +71,8 @@ object Hub {
 
     const val HOME_COUNTRY = "nz"
 
-    /** Set while the demo flight runs: the simulator's own idea of the ground, which the real terrain would contradict. */
-    var demoTerrain: ((Double, Double) -> Double)? = null
-
     /** Ground elevation AMSL, NaN if not known (yet). */
-    fun terrainAt(lat: Double, lon: Double): Double = demoTerrain?.invoke(lat, lon) ?: elevation.at(lat, lon)
+    fun terrainAt(lat: Double, lon: Double): Double = elevation.at(lat, lon)
 
     /** Push settings into the flight computer. Call after any setting changes. */
     fun applySettings() {

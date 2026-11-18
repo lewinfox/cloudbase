@@ -7,11 +7,12 @@ altitude, climb, wind, airspace on the map and from the side with alerts before 
 a lift/sink heat map for centring thermals, and IGC flight logs that start and stop by
 themselves. Set up for New Zealand; other countries' airspace is one tap away.
 
-| Thermalling | Airspace warning | Inside airspace | On glide |
-|---|---|---|---|
-| ![](docs/screenshots/1-thermalling.png) | ![](docs/screenshots/2-airspace-warning.png) | ![](docs/screenshots/3-inside-airspace.png) | ![](docs/screenshots/4-glide-to-ground.png) |
+| Thermalling | Inside airspace | On glide |
+|---|---|---|
+| ![](docs/screenshots/1-thermalling.png) | ![](docs/screenshots/2-inside-airspace.png) | ![](docs/screenshots/3-glide-to-ground.png) |
 
-(Screenshots are the built-in demo flight, rendered by `make screenshots`.)
+(Screenshots are the built-in demo, a real recorded flight from Coronet Peak replayed through
+the app, rendered by `make screenshots`.)
 
 ## Install
 
@@ -27,8 +28,8 @@ Android 8 or newer. `make` lists the other targets (`test`, `screenshots`, `logs
 
 First launch, with a data connection: it downloads New Zealand airspace by itself. Then open
 **≡ → Offline maps**, frame your flying area on the map, and download it, so the map and
-terrain work with no signal. **≡ → Settings → Demo flight** flies a simulated flight so you can
-see everything working on the ground.
+terrain work with no signal. **≡ → Settings → Demo flight** replays a real flight from Coronet
+Peak so you can see everything working on the ground.
 
 ## What's on screen
 
@@ -55,7 +56,9 @@ next airspace floor you are. It shows from the ground to just past the next boun
 
 **Alerts.** A banner, a tone and (optionally) a spoken warning when you are *near* an airspace
 (amber), *about to enter* one on your present track and climb (red, with seconds to go), or
-*inside* one. Margins and look-ahead time are in Settings.
+*inside* one. Margins and look-ahead time are in Settings. An alert that stays true repeats
+three times and then goes quiet (the banner stays); if you fly a site that sits inside a
+control zone by local arrangement, press and hold on the zone and choose Ignore.
 
 **Flight log.** Starts at takeoff and stops at landing. Files are in **≡ → Flights**; tap one
 to share or upload it.
@@ -99,9 +102,16 @@ to share or upload it.
   drive up does not start a log); **landing** after 20 s at rest near the ground. Hovering low
   and motionless into wind for 20 s can end a log early; a new one starts when you move.
   Manual start/stop is in **Flights**.
-- **Not yet flown.** Everything is tested against a flight simulator and real NZ airspace
-  files, not yet against a real flight. The vario and wind tuning in particular want real
-  logs. Treat it as an aid, not as the thing keeping you legal or safe.
+- **Tested against one real flight, never flown itself.** A real 42-minute log (Coronet Peak,
+  GPS and a barometric vario at 1 Hz) is replayed through the whole pipeline in the tests: it
+  detects the takeoff 5 s after the pilot starts moving and the landing 40 s after touchdown,
+  and gives a steady southerly of 1 to 4 m/s all flight with a believable airspeed of about
+  9.3 m/s. That log also showed up three things the simulator had not, now fixed: walking after
+  landing was read as still flying, an airspace alert repeated every 30 s for the whole flight,
+  and the best-lift ring was on screen nearly all the time. Everything else is tested against a
+  simulator. The app has not been in the air on a phone, and the accelerometer part of the
+  vario has never seen real data at all. Treat it as an aid, not as the thing keeping you
+  legal or safe.
 
 ## Built to be light
 
@@ -121,7 +131,7 @@ to share or upload it.
 
 - `core/` — pure Kotlin, no Android, all the logic that can be wrong in the air: OpenAir
   parser, airspace geometry and alerting, vario filter, wind, thermal map, flight detection,
-  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (245
+  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (251
   tests) includes whole simulated flights through the full pipeline.
 - `app/` — Android: `FlightService` (GPS, sensors, demo), `map/` (tile view, cache, terrain
   elevation), `ui/` (instruments, overlays, side view, settings pages).

@@ -207,12 +207,23 @@ class FlightDetectorTest {
     }
 
     @Test
-    fun outlierInsideLandingRunRestartsTheClock() {
+    fun aBriefBreakInTheStillnessIsForgiven() {
         val d = flying()
         d.feed(100, 110, speed = 0.0, agl = { 1.0 })
-        d.update(111_000L, 3.0, 0.0, 1.0) // someone picked the glider up for a second
-        assertEquals(listOf(132 to FlightEvent.LANDING), d.feed(112, 140, speed = 0.0, agl = { 1.0 }))
-        assertEquals(112_000L, d.landingTimeMs)
+        d.update(111_000L, 3.0, 0.0, 1.0) // one stride while bunching up the wing
+        // The 20 s still count carries on from 100 s rather than starting again.
+        assertEquals(listOf(120 to FlightEvent.LANDING), d.feed(112, 140, speed = 0.0, agl = { 1.0 }))
+        assertEquals(100_000L, d.landingTimeMs)
+    }
+
+    @Test
+    fun aLongerBreakRestartsTheClock() {
+        val d = flying()
+        d.feed(100, 110, speed = 0.0, agl = { 1.0 })
+        // Five seconds on the move: that was not a landing.
+        assertEquals(emptyList<Pair<Int, FlightEvent>>(), d.feed(111, 115, speed = 6.0, agl = { 1.0 }))
+        assertEquals(listOf(136 to FlightEvent.LANDING), d.feed(116, 140, speed = 0.0, agl = { 1.0 }))
+        assertEquals(116_000L, d.landingTimeMs)
     }
 
     @Test

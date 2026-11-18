@@ -19,3 +19,6 @@ object Atmosphere {
     /** Air density relative to sea level at [altM]. True airspeed = indicated / sqrt(this). */
     fun densityRatio(altM: Double): Double = (1.0 - altM / 44330.769).pow(4.25588)
 }
+
+/** Pressure in hPa at [altM] metres of ISA pressure altitude: the inverse of [Atmosphere.pressureAltitude]. */
+fun Atmosphere.pressureAt(altM: Double): Double = Atmosphere.P0 * Math.pow(1.0 - altM / 44330.769, 1.0 / 0.190263)

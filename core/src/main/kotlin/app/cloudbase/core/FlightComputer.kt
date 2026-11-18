@@ -201,7 +201,9 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
             if (w != null && dtS > 0 && dtS < 10) thermals.drift(w.wind, dtS)
             thermals.add(f.lat, f.lon, airMass, f.timeMs)
             thermalHistory.add(f.lat, f.lon, airMass, f.timeMs)
-            thermalCore = thermals.bestLift(f.lat, f.lon, 400.0, f.timeMs)
+            // Only mark lift you could actually climb in: air rising faster than the glider sinks.
+            // (On a real flight a lower bar had the ring on screen almost the whole time.)
+            thermalCore = thermals.bestLift(f.lat, f.lon, 400.0, f.timeMs, minClimb = trimSinkMs + CORE_MARGIN_MS)
             trail.add(f.lat, f.lon)
         } else {
             airMass = Double.NaN
@@ -382,6 +384,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         const val PRE_TAKEOFF_MS = 5_000L
         /** A crash or flat battery loses at most this many seconds of log. */
         const val FLUSH_EVERY = 10
+        const val CORE_MARGIN_MS = 0.3
         /**
          * How long a sample rides the wind before it is pinned to the ground. Long enough to cover
          * centring a climb (you and the air you sampled drift downwind together); beyond that,

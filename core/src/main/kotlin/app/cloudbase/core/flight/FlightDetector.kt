@@ -25,7 +25,8 @@ enum class FlightEvent { TAKEOFF, LANDING }
  *  [takeoffTimeMs] is the first fix of the run that triggered it (the earliest, if several did),
  *  so it is when the pilot started running, not when the event fired.
  *
- * LANDING (only while FLYING): ground speed < [LAND_SPEED] and |vario| < [LAND_VARIO] (NaN vario
+ * LANDING (only while FLYING; breaks of up to [LAND_GLITCH_MS] are forgiven, unlike takeoff runs):
+ * ground speed < [LAND_SPEED] and |vario| < [LAND_VARIO] (NaN vario
  * counts as 0; NaN speed never counts as still) and, if terrain is known, agl < [LAND_MAX_AGL].
  *  - for [LAND_SUSTAIN_MS] if every fix of the run knew the terrain,
  *  - otherwise for [LAND_SUSTAIN_NO_TERRAIN_MS].
@@ -50,11 +51,17 @@ class FlightDetector {
         /** Extends the run with a qualifying fix at [t]; returns its length so far in ms. */
         fun hit(t: Long): Long {
             if (start == NONE) start = t
+            lastHit = t
             return t - start
         }
         fun miss() {
             start = NONE
         }
+        /** A miss that is forgiven if the run was still qualifying within the last [graceMs]. */
+        fun miss(t: Long, graceMs: Long) {
+            if (start != NONE && t - lastHit > graceMs) start = NONE
+        }
+        private var lastHit = NONE
     }
 
     private val speedRun = Run() // speed >= 2.5
@@ -100,8 +107,8 @@ class FlightDetector {
         } else {
             val still = groundSpeed < LAND_SPEED && abs(if (vario.isNaN()) 0.0 else vario) < LAND_VARIO &&
                 (!terrainKnown || aglM < LAND_MAX_AGL)
-            val any = run(stillRun, still, timeMs)
-            val known = run(stillKnownRun, still && terrainKnown, timeMs)
+            val any = run(stillRun, still, timeMs, LAND_GLITCH_MS)
+            val known = run(stillKnownRun, still && terrainKnown, timeMs, LAND_GLITCH_MS)
             var start = NONE
             if (known >= LAND_SUSTAIN_MS) start = stillKnownRun.start
             if (any >= LAND_SUSTAIN_NO_TERRAIN_MS && (start == NONE || stillRun.start < start)) {
@@ -134,9 +141,9 @@ class FlightDetector {
         clearRuns()
     }
 
-    private fun run(r: Run, qualifies: Boolean, t: Long): Long {
+    private fun run(r: Run, qualifies: Boolean, t: Long, graceMs: Long = 0L): Long {
         if (!qualifies) {
-            r.miss()
+            if (graceMs > 0L) r.miss(t, graceMs) else r.miss()
             return -1L
         }
         return r.hit(t)
@@ -158,7 +165,15 @@ class FlightDetector {
         const val TAKEOFF_VARIO = 1.5 // m/s, absolute
         const val TAKEOFF_VARIO_MIN_SPEED = 1.5 // m/s
         const val TAKEOFF_SUSTAIN_NO_TERRAIN_MS = 5_000L
-        const val LAND_SPEED = 1.5 // m/s
+        // Walking pace, not standing still: a real log shows the pilot on foot within seconds of
+        // touching down (bunching the wing, walking off the field).
+        const val LAND_SPEED = 2.0 // m/s
+        /**
+         * A break in the stillness this short does not restart the count. On the same real log one
+         * stride at 2.5 m/s, and one blip of the vario with the phone lying still, each reset a
+         * 30-second wait, and the landing was never detected before the recording ended.
+         */
+        const val LAND_GLITCH_MS = 3_000L
         const val LAND_VARIO = 0.5 // m/s, absolute
         const val LAND_MAX_AGL = 50.0 // m
         const val LAND_SUSTAIN_MS = 20_000L

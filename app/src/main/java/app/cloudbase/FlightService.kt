@@ -29,7 +29,9 @@ import android.os.SystemClock
 import app.cloudbase.core.Fix
 import app.cloudbase.core.Geoid
 import app.cloudbase.core.flight.FlightEvent
-import app.cloudbase.core.flight.FlightSim
+import app.cloudbase.core.Atmosphere
+import app.cloudbase.core.igc.IgcTrack
+import app.cloudbase.core.pressureAt
 import app.cloudbase.core.flight.FlightState
 
 /**
@@ -49,10 +51,8 @@ class FlightService : Service(), LocationListener, SensorEventListener {
     private var lastFixAt = 0L
     private var groundSince = 0L
 
-    private var sim: FlightSim? = null
-    private var simEpoch = 0L
-    private var simFixAt = 0.0
-    private var simBaroAt = 0.0
+    private var replay: IgcTrack? = null
+    private var replayIndex = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -90,8 +90,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         alerter.shutdown()
         releaseWakeLock()
         Hub.serviceRunning = false
-        Hub.demoTerrain = null
-        sim = null
+        replay = null
         Hub.gpsStatus = "Stopped"
         super.onDestroy()
     }
@@ -183,36 +182,28 @@ class FlightService : Service(), LocationListener, SensorEventListener {
     // --- demo --------------------------------------------------------------------------------
 
     private fun startDemo() {
-        val s = Hub.settings
-        sim = FlightSim(seed = 7, startLat = DEMO_LAT, startLon = DEMO_LON, groundElevM = DEMO_ELEV, trimSpeed = s.trimKmh / 3.6)
-        // A hill at the launch and flat ground 600 m below everywhere else, which is the world
-        // the simulator flies in.
-        Hub.demoTerrain = { lat, lon ->
-            val d = app.cloudbase.core.Geo.distance(lat, lon, DEMO_LAT, DEMO_LON)
-            DEMO_ELEV - 600.0 * (d / 900.0).coerceAtMost(1.0)
-        }
-        simEpoch = System.currentTimeMillis()
-        simFixAt = 0.0
-        simBaroAt = 0.0
-        Hub.gpsStatus = "Demo flight"
+        replay = try {
+            assets.open(DEMO_ASSET).bufferedReader().use { IgcTrack.read(it) }
+        } catch (e: Exception) { null }
+        replayIndex = 0
+        Hub.gpsStatus = if (replay == null) "Demo flight missing" else "Demo flight"
         handler.post(demoTick)
     }
 
-    /** Runs the simulated flight faster than real time through exactly the same inputs as real sensors. */
+    /**
+     * Replays a real recorded flight, faster than real time, through exactly the same inputs as
+     * live sensors: pressure first, then the fix, once per recorded second. The recording has no
+     * accelerometer, so the demo's climb reading is a little slower than a phone's own sensors give.
+     */
     private val demoTick = object : Runnable {
         override fun run() {
-            val sim = sim ?: return
-            val c = Hub.computer
-            var steps = (DEMO_TICK_MS / 1000.0 * DEMO_SPEED / SIM_DT).toInt()
-            while (steps-- > 0 && !sim.finished) {
-                sim.step(SIM_DT)
-                val tNs = (sim.timeS * 1e9).toLong()
-                val a = sim.accel
-                c.onAccel(tNs, a[0], a[1], a[2])
-                if (sim.timeS - simBaroAt >= 0.05) { simBaroAt = sim.timeS; c.onPressure(tNs, sim.pressureHpa) }
-                if (sim.timeS - simFixAt >= 1.0) { simFixAt = sim.timeS; c.onFix(sim.fix(simEpoch)); afterFix() }
-            }
-            if (!sim.finished) handler.postDelayed(this, DEMO_TICK_MS)
+            val t = replay ?: return
+            if (replayIndex >= t.size) return
+            val i = replayIndex++
+            if (t.hasPressure) Hub.computer.onPressure(t.timeMs(i) * 1_000_000L, Atmosphere.pressureAt(t.pressureAlt(i)))
+            Hub.computer.onFix(t.fix(i))
+            afterFix()
+            handler.postDelayed(this, (1000 / DEMO_SPEED).toLong())
         }
     }
 
@@ -232,7 +223,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
     private val watchdog = object : Runnable {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
-            if (sim == null && lastFixAt != 0L && now - lastFixAt > GPS_LOST_MS && Hub.gpsStatus.isEmpty()) Hub.gpsStatus = "GPS signal lost"
+            if (replay == null && lastFixAt != 0L && now - lastFixAt > GPS_LOST_MS && Hub.gpsStatus.isEmpty()) Hub.gpsStatus = "GPS signal lost"
             val idle = groundSince != 0L && now - groundSince > IDLE_STOP_MS
             if (idle && !MainActivity.visible) { stopSelf(); return }
             handler.postDelayed(this, WATCHDOG_MS)
@@ -299,14 +290,9 @@ class FlightService : Service(), LocationListener, SensorEventListener {
          */
         const val IDLE_STOP_MS = 60 * 60_000L
         const val MAX_FLIGHT_MS = 12 * 3_600_000L
-        const val DEMO_TICK_MS = 50L
         const val DEMO_SPEED = 4.0
-        const val SIM_DT = 0.04
-        // Demo launch: the hills behind Paekākāriki, under the Wellington control area, so the
-        // simulated climb runs into real airspace and shows the alerts.
-        const val DEMO_LAT = -40.975
-        const val DEMO_LON = 174.975
-        const val DEMO_ELEV = 700.0
+        /** A real 42-minute flight from Coronet Peak: track data only, 1 Hz, GPS and barometric altitude. */
+        const val DEMO_ASSET = "demo_flight.igc"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, FlightService::class.java))

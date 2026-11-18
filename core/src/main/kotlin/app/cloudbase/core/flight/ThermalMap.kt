@@ -142,23 +142,27 @@ class ThermalMap(val cellM: Double = 30.0, val maxAgeMs: Long = 20 * 60_000L, va
 
     /**
      * Centre of the best recent lift within [radiusM] of (lat, lon): the climb-weighted centroid of
-     * cells that are >= 60 % of the strongest eligible cell and > 0.5 m/s, newer than
+     * cells that are >= 60 % of the strongest eligible cell and > [minClimb], newer than
      * [maxAgeForCoreMs]. Null if there is no such cell.
      */
-    fun bestLift(lat: Double, lon: Double, radiusM: Double, nowMs: Long, maxAgeForCoreMs: Long = 4 * 60_000L): Core? {
+    fun bestLift(
+        lat: Double, lon: Double, radiusM: Double, nowMs: Long, maxAgeForCoreMs: Long = 4 * 60_000L,
+        /** Weakest air-mass climb worth marking. To gain height it has to exceed the glider's own sink. */
+        minClimb: Double = MIN_CORE_CLIMB,
+    ): Core? {
         val p = proj ?: return null
         val px = p.x(lon)
         val py = p.y(lat)
         val r2 = radiusM * radiusM
         val ageLimit = minOf(maxAgeForCoreMs, maxAgeMs)
 
-        var best = MIN_CORE_CLIMB
+        var best = minClimb
         for (slot in 0 until capacity) {
             val key = keys[slot]
             if (key == EMPTY || nowMs - times[slot] > ageLimit) continue
             if (inside(key, px, py, r2) && climbs[slot] > best) best = climbs[slot]
         }
-        if (best <= MIN_CORE_CLIMB) return null
+        if (best <= minClimb) return null
 
         val threshold = CORE_FRACTION * best
         var sumW = 0.0
@@ -168,7 +172,7 @@ class ThermalMap(val cellM: Double = 30.0, val maxAgeMs: Long = 20 * 60_000L, va
             val key = keys[slot]
             if (key == EMPTY || nowMs - times[slot] > ageLimit) continue
             val w = climbs[slot]
-            if (w < threshold || w <= MIN_CORE_CLIMB || !inside(key, px, py, r2)) continue
+            if (w < threshold || w <= minClimb || !inside(key, px, py, r2)) continue
             sumW += w
             sumX += w * (cellX(key) + driftE)
             sumY += w * (cellY(key) + driftN)

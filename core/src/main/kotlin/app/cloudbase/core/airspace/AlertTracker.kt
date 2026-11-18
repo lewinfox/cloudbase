@@ -15,10 +15,18 @@ class AlertTracker(
     val repeatInsideMs: Long = 30_000,
     val repeatImminentMs: Long = 15_000,
     val clearAfterMs: Long = 10_000,
+    /**
+     * Repeats of the same alert before it goes quiet. Someone still inside after this many has
+     * heard it and is there on purpose (flying a site inside a control zone by local agreement,
+     * say); nagging for the rest of the flight only teaches them to mute the app. The banner
+     * stays, and leaving and re-entering starts afresh.
+     */
+    val maxRepeats: Int = 3,
 ) {
     private class State {
         var announced = AlertLevel.NONE
         var announcedAtMs = 0L
+        var repeats = 0
         /** Last time the airspace was present at a level >= [announced]. */
         var qualifiedAtMs = 0L
         /** Level in the current update; only meaningful when [epoch] matches. */
@@ -52,6 +60,7 @@ class AlertTracker(
                 it.remove()
             } else {
                 st.announced = now
+                st.repeats = 0
                 st.announcedAtMs = nowMs // already announced recently enough; do not repeat at once
                 st.qualifiedAtMs = nowMs
             }
@@ -64,7 +73,7 @@ class AlertTracker(
             if (s.level == AlertLevel.NONE) continue
             val st = states[s.airspace] ?: continue
             val rise = s.level > st.announced
-            val due = rise || (s.level == st.announced && nowMs - st.announcedAtMs >= repeatMs(s.level))
+            val due = rise || (s.level == st.announced && st.repeats < maxRepeats && nowMs - st.announcedAtMs >= repeatMs(s.level))
             if (due && better(s, rise, best, bestRise)) {
                 best = s
                 bestRise = rise
@@ -72,6 +81,7 @@ class AlertTracker(
         }
         val chosen = best ?: return null
         val st = states.getValue(chosen.airspace)
+        st.repeats = if (bestRise) 0 else st.repeats + 1
         st.announced = chosen.level
         st.announcedAtMs = nowMs
         st.qualifiedAtMs = nowMs
