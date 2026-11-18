@@ -6,157 +6,154 @@ import org.junit.Test
 import kotlin.math.abs
 
 class HeatGridTest {
-    private val scale = 2.0f
     private fun alpha(c: Int) = c ushr 24
     private fun rgb(c: Int) = c and 0xFFFFFF
+    private fun r(c: Int) = c shr 16 and 0xFF
+    private fun g(c: Int) = c shr 8 and 0xFF
+    private fun b(c: Int) = c and 0xFF
+    private fun col(v: Float) = HeatGrid.color(v, 1f)
 
     /** Perceived brightness, 0..255 (Rec. 601 luma). */
-    private fun luma(c: Int) = 0.299 * (c shr 16 and 0xFF) + 0.587 * (c shr 8 and 0xFF) + 0.114 * (c and 0xFF)
+    private fun luma(c: Int) = 0.299 * r(c) + 0.587 * g(c) + 0.114 * b(c)
 
     /** How far apart two colours are, in RGB. */
-    private fun distance(a: Int, b: Int): Double {
-        val dr = (a shr 16 and 0xFF) - (b shr 16 and 0xFF)
-        val dg = (a shr 8 and 0xFF) - (b shr 8 and 0xFF)
-        val db = (a and 0xFF) - (b and 0xFF)
+    private fun distance(x: Int, y: Int): Double {
+        val dr = r(x) - r(y); val dg = g(x) - g(y); val db = b(x) - b(y)
         return Math.sqrt((dr * dr + dg * dg + db * db).toDouble())
     }
 
-    @Test fun brightnessRisesSteadilyFromSinkToClimb() {
-        var last = -1.0
-        var v = -6f
-        while (v <= 6f) {
-            if (abs(v) > HeatGrid.DEAD_BAND) {
-                val l = luma(HeatGrid.color(v, scale, 1f))
-                assertTrue("brightness at $v m/s ($l) must not be below the value before ($last)", l >= last - 0.5)
-                last = l
-            }
+    @Test fun liftIsSpreadOverManyColoursAcrossTheRangeThatMatters() {
+        // Each step up in climb, from weak to very strong, is a clearly different colour...
+        val steps = listOf(0.3f, 0.7f, 1.5f, 2.5f, 4f, 7f)
+        for (i in 0 until steps.size - 1) {
+            val d = distance(col(steps[i]), col(steps[i + 1]))
+            assertTrue("%.1f and %.1f m/s differ by only %.0f".format(steps[i], steps[i + 1], d), d > 55)
+        }
+        // ...and so is each half metre through the ordinary thermal range.
+        var v = 0.5f
+        while (v < 3.5f) {
+            val d = distance(col(v), col(v + 0.5f))
+            assertTrue("%.1f and %.1f m/s differ by only %.0f".format(v, v + 0.5f, d), d > 25)
+            v += 0.5f
+        }
+        // The named colours land where the comment says they do.
+        val yellow = col(0.7f); val orange = col(1.5f); val red = col(2.5f); val crimson = col(4f); val deep = col(9f)
+        assertTrue("0.7 m/s is yellow: %06X".format(rgb(yellow)), r(yellow) > 240 && g(yellow) > 190 && b(yellow) < 90)
+        assertTrue("1.5 m/s is orange: %06X".format(rgb(orange)), r(orange) > 240 && g(orange) in 110..190 && b(orange) < 40)
+        assertTrue("2.5 m/s is red: %06X".format(rgb(red)), r(red) > 230 && g(red) < 100 && b(red) < 40)
+        assertTrue("4 m/s is crimson: %06X".format(rgb(crimson)), r(crimson) in 190..230 && g(crimson) < 30)
+        assertTrue("very strong is deep crimson: %06X".format(rgb(deep)), r(deep) in 130..170 && g(deep) < 15)
+        // Stronger lift is deeper, so the best lift stands out most against a pale map.
+        var last = 256.0
+        v = 0.3f
+        while (v <= 8f) { val l = luma(col(v)); assertTrue("brightness at $v", l <= last + 0.5); last = l; v += 0.1f }
+    }
+
+    @Test fun sinkRunsFromVioletToNearBlack() {
+        var last = 256.0
+        var v = 0.3f
+        while (v <= 6f) { val l = luma(col(-v)); assertTrue("brightness at -$v", l <= last + 0.5); last = l; v += 0.1f }
+        assertTrue(luma(col(-5f)) < 45)
+        // Sink uses its range up sooner than lift: it only needs to say "bad" and "worse".
+        assertTrue(HeatGrid.strength(-2f) > HeatGrid.strength(2f) + 0.2f)
+        assertEquals(0.76f, HeatGrid.strength(-HeatGrid.SINK_SCALE), 0.01f)
+        assertEquals(0.76f, HeatGrid.strength(HeatGrid.LIFT_SCALE), 0.01f)
+        assertTrue(HeatGrid.strength(50f) <= 1f && HeatGrid.strength(-50f) <= 1f)
+    }
+
+    @Test fun upAndDownAreUnmistakablyDifferentAtEveryStrength() {
+        assertTrue(distance(col(0.4f), col(-0.4f)) > 200)
+        var v = 0.25f
+        while (v <= 8f) {
+            val up = col(v); val down = col(-v)
+            // Lift is the yellow/orange/red family (red well above blue); sink the violet/indigo family (blue above red).
+            assertTrue("lift at $v: %06X".format(rgb(up)), r(up) > b(up) + 60)
+            assertTrue("sink at $v: %06X".format(rgb(down)), b(down) > r(down) + 20)
+            assertTrue("lift $v vs sink $v", distance(up, down) > 120)
             v += 0.25f
         }
-        // Strong sink is dark, strong climb is bright.
-        assertTrue(luma(HeatGrid.color(-5f, scale, 1f)) < 45)
-        assertTrue(luma(HeatGrid.color(5f, scale, 1f)) > 190)
     }
 
     @Test fun neverUsesTheMapsGreens() {
-        // The map underneath is greens and grey-blues; nothing on the scale may be green. (The
-        // bright end is yellow, where green and red are both high: that is not green.)
-        var v = -6f
-        while (v <= 6f) {
-            val c = HeatGrid.color(v, scale, 1f)
-            if (c != 0) {
-                val r = c shr 16 and 0xFF; val g = c shr 8 and 0xFF; val b = c and 0xFF
-                assertTrue("green at $v m/s: %06X".format(rgb(c)), !(g > r + 25 && g > b + 25))
-            }
+        // The map underneath is greens and grey-blues. (Yellow has green and red both high: not green.)
+        var v = -8f
+        while (v <= 8f) {
+            val c = col(v)
+            if (c != 0) assertTrue("green at $v m/s: %06X".format(rgb(c)), !(g(c) > r(c) + 25 && g(c) > b(c) + 25))
             v += 0.1f
         }
     }
 
-    @Test fun mostOfTheScaleIsSpentOnOrdinaryClimbRates() {
-        // Sigmoid: half a metre per second is a much bigger colour step near zero than out at the extremes.
-        val near = distance(HeatGrid.color(0.5f, scale, 1f), HeatGrid.color(1.0f, scale, 1f))
-        val far = distance(HeatGrid.color(4.0f, scale, 1f), HeatGrid.color(4.5f, scale, 1f))
-        assertTrue("near $near, far $far", near > 5 * far)
-        // Every half-step across the ordinary range is a clearly different colour.
-        var v = -2.5f
-        while (v < 2.5f) {
-            if (abs(v) > HeatGrid.DEAD_BAND && abs(v + 0.5f) > HeatGrid.DEAD_BAND) {
-                val d = distance(HeatGrid.color(v, scale, 1f), HeatGrid.color(v + 0.5f, scale, 1f))
-                assertTrue("%.1f to %.1f m/s differ by only %.0f".format(v, v + 0.5f, d), d > 18)
-            }
-            v += 0.5f
-        }
-        assertEquals(0f, HeatGrid.strength(0f, scale), 1e-6f)
-        assertEquals(0.76f, HeatGrid.strength(2.0f, scale), 0.01f)
-        assertEquals(HeatGrid.strength(1.3f, scale), HeatGrid.strength(-1.3f, scale), 1e-6f)
-        assertTrue(HeatGrid.strength(50f, scale) <= 1f)
-    }
-
-    @Test fun upAndDownAreUnmistakablyDifferentEvenWhenWeak() {
-        // The first thing to read is the sign. Just either side of still air the two colours
-        // must be far apart, and each side must stay in its own family at every strength.
-        val weakLift = HeatGrid.color(0.4f, scale, 1f)
-        val weakSink = HeatGrid.color(-0.4f, scale, 1f)
-        assertTrue("weak lift and weak sink differ by ${distance(weakLift, weakSink)}", distance(weakLift, weakSink) > 200)
-        var v = 0.25f
-        while (v <= 6f) {
-            val up = HeatGrid.color(v, scale, 1f)
-            val down = HeatGrid.color(-v, scale, 1f)
-            // Lift is the orange/yellow family (red well above blue); sink the violet/indigo family (blue above red).
-            assertTrue("lift at $v: %06X".format(rgb(up)), (up shr 16 and 0xFF) > (up and 0xFF) + 60)
-            assertTrue("sink at $v: %06X".format(rgb(down)), (down and 0xFF) > (down shr 16 and 0xFF) + 20)
-            v += 0.25f
-        }
-    }
-
     @Test fun stillAirIsNotDrawnAndOpacityIsCoverageOnly() {
-        assertEquals(0, HeatGrid.color(0.1f, scale, 1f))
-        assertEquals(0, HeatGrid.color(-0.15f, scale, 1f))
+        assertEquals(0, col(0.1f))
+        assertEquals(0, col(-0.15f))
         // Weak and strong air are equally opaque: the colour carries the strength.
-        assertEquals(HeatGrid.ALPHA, alpha(HeatGrid.color(0.4f, scale, 1f)))
-        assertEquals(HeatGrid.ALPHA, alpha(HeatGrid.color(4f, scale, 1f)))
-        assertTrue(alpha(HeatGrid.color(2f, scale, 0.3f)) < HeatGrid.ALPHA / 2)
+        assertEquals(HeatGrid.ALPHA, alpha(col(0.4f)))
+        assertEquals(HeatGrid.ALPHA, alpha(col(4f)))
+        assertTrue(alpha(HeatGrid.color(2f, 0.3f)) < HeatGrid.ALPHA / 2)
     }
 
     @Test fun oneCellBecomesASoftBlob() {
-        val g = HeatGrid(16)
-        g.clear()
-        g.splat(8, 8, 2f, 1f)
-        g.render(scale)
-        val centre = alpha(g.pixels[8 * 16 + 8])
-        val next = alpha(g.pixels[8 * 16 + 9])
-        val edge = alpha(g.pixels[8 * 16 + 10])
+        val grid = HeatGrid(16)
+        grid.clear()
+        grid.splat(8, 8, 2f, 1f)
+        grid.render()
+        val centre = alpha(grid.pixels[8 * 16 + 8])
+        val next = alpha(grid.pixels[8 * 16 + 9])
+        val edge = alpha(grid.pixels[8 * 16 + 10])
         assertEquals(HeatGrid.ALPHA, centre)
         assertTrue("fades outwards: $centre > $next > $edge > 0", centre > next && next > edge && edge > 0)
-        assertEquals(0, g.pixels[8 * 16 + 11])
+        assertEquals(0, grid.pixels[8 * 16 + 11])
         // Same value everywhere it reaches: only the opacity falls off.
-        assertEquals(rgb(g.pixels[8 * 16 + 8]), rgb(g.pixels[8 * 16 + 9]))
+        assertEquals(rgb(grid.pixels[8 * 16 + 8]), rgb(grid.pixels[8 * 16 + 9]))
         // Symmetric.
-        assertEquals(g.pixels[8 * 16 + 9], g.pixels[8 * 16 + 7])
-        assertEquals(g.pixels[8 * 16 + 9], g.pixels[9 * 16 + 8])
+        assertEquals(grid.pixels[8 * 16 + 9], grid.pixels[8 * 16 + 7])
+        assertEquals(grid.pixels[8 * 16 + 9], grid.pixels[9 * 16 + 8])
     }
 
     @Test fun neighbouringLiftAndSinkBlendThroughNothing() {
-        val g = HeatGrid(16)
-        g.clear()
-        g.splat(6, 8, 2f, 1f)
-        g.splat(8, 8, -2f, 1f)
-        g.render(scale)
+        val grid = HeatGrid(16)
+        grid.clear()
+        grid.splat(6, 8, 2f, 1f)
+        grid.splat(8, 8, -2f, 1f)
+        grid.render()
         // Exactly between equal lift and sink the average is zero: transparent.
-        assertEquals(0, g.pixels[8 * 16 + 7])
-        assertTrue(luma(g.pixels[8 * 16 + 6]) > luma(g.pixels[8 * 16 + 8]) + 60)
+        assertEquals(0, grid.pixels[8 * 16 + 7])
+        assertTrue(r(grid.pixels[8 * 16 + 6]) > b(grid.pixels[8 * 16 + 6]))
+        assertTrue(b(grid.pixels[8 * 16 + 8]) > r(grid.pixels[8 * 16 + 8]))
     }
 
     @Test fun oldCellsCountForLess() {
-        val g = HeatGrid(16)
-        g.clear()
-        g.splat(8, 8, 2f, 0.3f)
-        g.render(scale)
-        val faded = alpha(g.pixels[8 * 16 + 8])
+        val grid = HeatGrid(16)
+        grid.clear()
+        grid.splat(8, 8, 2f, 0.3f)
+        grid.render()
+        val faded = alpha(grid.pixels[8 * 16 + 8])
         assertTrue(faded > 0 && faded < HeatGrid.ALPHA)
         // A fresh sample on the same spot outweighs an old one: the result is on the sink side.
-        g.splat(8, 8, -2f, 1f)
-        g.render(scale)
-        assertTrue(luma(g.pixels[8 * 16 + 8]) < luma(HeatGrid.color(0.3f, scale, 1f)))
+        grid.splat(8, 8, -2f, 1f)
+        grid.render()
+        assertTrue(b(grid.pixels[8 * 16 + 8]) > r(grid.pixels[8 * 16 + 8]))
     }
 
     @Test fun aDensePatchOfOldSamplesIsAsFadedAsOneOldSample() {
         val lone = HeatGrid(16)
-        lone.clear(); lone.splat(8, 8, 2f, 0.5f); lone.render(scale)
+        lone.clear(); lone.splat(8, 8, 2f, 0.5f); lone.render()
         val dense = HeatGrid(16)
         dense.clear()
         for (y in 4..12) for (x in 4..12) dense.splat(x, y, 2f, 0.5f)
-        dense.render(scale)
+        dense.render()
         assertEquals(alpha(lone.pixels[8 * 16 + 8]), alpha(dense.pixels[8 * 16 + 8]))
         assertEquals(HeatGrid.ALPHA / 2.0, alpha(dense.pixels[8 * 16 + 8]).toDouble(), 2.0)
     }
 
     @Test fun edgesAndClearAreSafe() {
-        val g = HeatGrid(8)
-        g.clear()
-        for (p in listOf(-5, -2, -1, 0, 7, 8, 9, 20)) { g.splat(p, p, 1f, 1f); g.splat(p, 3, 1f, 1f) }
-        g.render(scale)
-        g.clear()
-        g.render(scale)
-        assertTrue(g.pixels.all { it == 0 })
+        val grid = HeatGrid(8)
+        grid.clear()
+        for (p in listOf(-5, -2, -1, 0, 7, 8, 9, 20)) { grid.splat(p, p, 1f, 1f); grid.splat(p, 3, 1f, 1f) }
+        grid.render()
+        grid.clear()
+        grid.render()
+        assertTrue(grid.pixels.all { it == 0 })
     }
 }

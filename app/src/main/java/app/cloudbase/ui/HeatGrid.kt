@@ -46,8 +46,8 @@ class HeatGrid(val n: Int) {
         }
     }
 
-    /** Fill [pixels]. [scale] sets how quickly the colours run out towards the ends: see [position]. */
-    fun render(scale: Float) {
+    /** Fill [pixels]. */
+    fun render() {
         for (i in pixels.indices) {
             val w = weight[i]
             if (w < 1e-5f) { pixels[i] = 0; continue }
@@ -56,7 +56,7 @@ class HeatGrid(val n: Int) {
             // Opacity is coverage times the average say of what landed here, so a whole patch of
             // old samples is as faded as a single old sample, however densely it was flown.
             val coverage = min(1f, cover[i] / CENTRE_WEIGHT)
-            pixels[i] = color(v, scale, coverage * (w / cover[i]))
+            pixels[i] = color(v, coverage * (w / cover[i]))
         }
     }
 
@@ -70,31 +70,39 @@ class HeatGrid(val n: Int) {
         const val ALPHA = 225
 
         /**
-         * Two colour families, so whether the air is going up or down is the first thing you see,
-         * and brightness that rises all the way from strong sink to strong climb, so the order
-         * survives glare and colour-blindness:
-         *
-         *   strong sink  near-black indigo > indigo > violet   |gap|   red-orange > amber > yellow > pale yellow  strong climb
-         *
-         * Neither family has green or grey-blue in it, which are the colours of the map underneath.
+         * Two colour families, so whether the air is going up or down is the first thing you see.
+         * Neither has green or grey-blue in it, which are the colours of the map underneath.
          * Each ramp is listed weakest to strongest.
+         *
+         * Sink: violet through indigo to near-black.
+         *
+         * Lift, the side a pilot actually reads, gets more colours and more of them spent across
+         * the range that matters: pale yellow and yellow (air rising, but not yet faster than the
+         * glider sinks), orange (about where you start to climb), red, crimson, deep crimson.
+         * Stronger is hotter, deeper and more intense: that is the shade the eye wants to turn
+         * towards, and it is also the most visible thing on a pale map.
          */
         private val SINK = intArrayOf(0x9A35E8, 0x6A1FD0, 0x3F14A8, 0x1E0B6B, 0x0B0433)
-        private val LIFT = intArrayOf(0xFF4E1A, 0xFF8A00, 0xFFC400, 0xFFE83B, 0xFFF9B8)
+        private val LIFT = intArrayOf(0xFFF3A0, 0xFFD600, 0xFF9800, 0xFF3D00, 0xD50032, 0x8E0045)
+
+        /** Sigmoid scales, m/s: 76 % of a ramp is used by this much. Sink saturates early; lift is spread wide. */
+        const val SINK_SCALE = 2.0f
+        const val LIFT_SCALE = 3.5f
 
         /**
-         * How far along its ramp a climb or sink value sits, 0..1. A sigmoid (tanh): most of the
-         * colour range is spent on ordinary values where telling them apart matters, and extreme
-         * values flatten out towards the end instead of all looking the same shade once past a
-         * hard limit. [scale] is the climb or sink at which 76 % of the ramp has been used.
+         * How far along its ramp a climb or sink value sits, 0..1. A sigmoid (tanh): the colour
+         * range is spent on ordinary values where telling them apart matters, and extreme values
+         * flatten out towards the end instead of all looking the same shade past a hard limit.
+         * With [LIFT_SCALE] the lift colours fall at roughly: yellow 0.7 m/s, orange 1.5, red 2.5,
+         * crimson 4, deep crimson beyond 6.
          */
-        fun strength(climb: Float, scale: Float): Float = tanh(abs(climb) / scale)
+        fun strength(climb: Float): Float = tanh(abs(climb) / if (climb > 0) LIFT_SCALE else SINK_SCALE)
 
         /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area and old samples. */
-        fun color(climb: Float, scale: Float, coverage: Float): Int {
+        fun color(climb: Float, coverage: Float): Int {
             if (abs(climb) <= DEAD_BAND || coverage <= 0f) return 0
             val ramp = if (climb > 0) LIFT else SINK
-            val pos = strength(climb, scale) * (ramp.size - 1)
+            val pos = strength(climb) * (ramp.size - 1)
             val k = min(pos.toInt(), ramp.size - 2)
             val f = pos - k
             val a = ramp[k]
