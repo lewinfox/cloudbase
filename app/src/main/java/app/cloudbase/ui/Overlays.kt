@@ -199,7 +199,7 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
         /** Lift or sink at which the colour is at its strongest. */
         const val FULL_SCALE_MS = 3.0f
         /** How strongly old, ground-fixed samples are drawn next to fresh ones: faded, still legible. */
-        const val HISTORY_STRENGTH = 0.5f
+        const val HISTORY_STRENGTH = 0.6f
         const val SIZE = 96
         private const val LIVE = 0
         private const val HISTORY = 1

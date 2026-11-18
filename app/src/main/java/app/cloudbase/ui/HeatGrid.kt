@@ -66,12 +66,15 @@ class HeatGrid(val n: Int) {
         private const val CENTRE_WEIGHT = (6 / 16f) * (6 / 16f)
         /** Air moving less than this is shown as nothing: it is within the noise of the estimate. */
         const val DEAD_BAND = 0.2f
-        const val MAX_ALPHA = 215
+        const val MAX_ALPHA = 235
 
-        // Graduated ramps, weakest to strongest. Lift runs warm (amber to deep red), sink runs
-        // cool (pale to deep blue), so strength reads from the hue as well as the opacity.
-        private val LIFT = intArrayOf(0xFFC14D, 0xFF8A3D, 0xF4511E, 0xD32F2F, 0x8E0000)
-        private val SINK = intArrayOf(0x9AD1F5, 0x5AAEF0, 0x1E88E5, 0x1565C0, 0x0B3C91)
+        // Graduated ramps, weakest to strongest, so strength reads from the hue as well as the
+        // opacity. Every stop is fully saturated, and chosen to be a colour the topographic map
+        // underneath does not use: the map is muted greens, greys, browns and a pale grey-blue,
+        // which is exactly what a soft blue or a dull red disappears into in sunlight. Lift runs
+        // yellow through orange and red to hot pink; sink runs cyan through electric blue to violet.
+        private val LIFT = intArrayOf(0xFFD600, 0xFF9100, 0xFF3D00, 0xFF1744, 0xD5006D)
+        private val SINK = intArrayOf(0x00E5FF, 0x00B0FF, 0x2979FF, 0x3D5AFE, 0x651FFF)
 
         /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area. */
         fun color(climb: Float, fullScale: Float, coverage: Float): Int {
@@ -87,8 +90,9 @@ class HeatGrid(val n: Int) {
             val r = mix(a shr 16 and 0xFF, b shr 16 and 0xFF, f)
             val g = mix(a shr 8 and 0xFF, b shr 8 and 0xFF, f)
             val bl = mix(a and 0xFF, b and 0xFF, f)
-            // Weak air is faint, strong air is solid; never fully opaque so the map shows through.
-            val alpha = (MAX_ALPHA * coverage * (0.35f + 0.65f * t)).toInt()
+            // Weak air is lighter, strong air nearly solid; even the weakest is opaque enough to
+            // read in sunlight, and nothing is fully opaque so the map still shows through.
+            val alpha = (MAX_ALPHA * coverage * (0.55f + 0.45f * t)).toInt()
             return (alpha shl 24) or (r shl 16) or (g shl 8) or bl
         }
 
