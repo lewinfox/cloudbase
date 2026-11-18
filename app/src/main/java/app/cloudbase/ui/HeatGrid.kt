@@ -7,7 +7,8 @@ import kotlin.math.min
  * Turns scattered lift/sink cells into a smooth picture: a small grid, one pixel per thermal-map
  * cell, where every cell is spread over its neighbours with a Gaussian kernel. The pixel's value
  * is the weighted average climb of everything spread onto it, and its opacity is how much was
- * (so the edge of what has been flown through fades out rather than ending in a hard line).
+ * (so the edge of what has been flown through fades out rather than ending in a hard line)
+ * and how fresh.
  * Drawn scaled up with bilinear filtering, that reads as a cloud, not as dots.
  *
  * Plain Kotlin on arrays so it can be tested without Android, and nothing is allocated per frame.
@@ -15,12 +16,14 @@ import kotlin.math.min
 class HeatGrid(val n: Int) {
     private val sum = FloatArray(n * n)
     private val weight = FloatArray(n * n)
+    private val cover = FloatArray(n * n)
     /** Non-premultiplied ARGB, row 0 at the top, ready for Bitmap.setPixels. */
     val pixels = IntArray(n * n)
 
     fun clear() {
         sum.fill(0f)
         weight.fill(0f)
+        cover.fill(0f)
     }
 
     /** Spread one cell at grid position ([ix], [iy]) with value [climb] m/s; [w] 0..1 scales its say (age). */
@@ -33,10 +36,11 @@ class HeatGrid(val n: Int) {
             for (dx in -R..R) {
                 val x = ix + dx
                 if (x < 0 || x >= n) continue
-                val k = ky * KERNEL[dx + R] * w
+                val k = ky * KERNEL[dx + R]
                 val i = y * n + x
-                sum[i] += k * climb
-                weight[i] += k
+                sum[i] += k * w * climb
+                weight[i] += k * w
+                cover[i] += k
             }
         }
     }
@@ -45,11 +49,13 @@ class HeatGrid(val n: Int) {
     fun render(fullScale: Float) {
         for (i in pixels.indices) {
             val w = weight[i]
-            if (w < 1e-4f) { pixels[i] = 0; continue }
+            if (w < 1e-5f) { pixels[i] = 0; continue }
             val v = sum[i] / w
-            // One fresh cell alone gives CENTRE_WEIGHT at its own pixel: that counts as fully covered.
-            val coverage = min(1f, w / CENTRE_WEIGHT)
-            pixels[i] = color(v, fullScale, coverage)
+            // One cell alone gives CENTRE_WEIGHT at its own pixel: that counts as fully covered.
+            // Opacity is coverage times the average say of what landed here, so a whole patch of
+            // old samples is as faded as a single old sample, however densely it was flown.
+            val coverage = min(1f, cover[i] / CENTRE_WEIGHT)
+            pixels[i] = color(v, fullScale, coverage * (w / cover[i]))
         }
     }
 

@@ -85,7 +85,18 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
     var hasBaro = false; private set
     var recording = false; private set
 
-    val thermals = ThermalMap()
+    /**
+     * Lift and sink met in the last [LIVE_THERMAL_MS], carried downwind with the air: where the
+     * thermal you are working is NOW. This is the one to centre on.
+     */
+    val thermals = ThermalMap(maxAgeMs = LIVE_THERMAL_MS)
+
+    /**
+     * The same samples left where they were met, over the ground, for the whole flight: "there
+     * was lift over that spur half an hour ago". It does not drift, because what lasts is the
+     * place that triggers thermals, not the air that was there at the time.
+     */
+    val thermalHistory = ThermalMap(maxAgeMs = WHOLE_FLIGHT_MS, maxCells = HISTORY_CELLS)
     val trail = Trail(1800)
 
     // --- internals ---------------------------------------------------------------------------
@@ -176,6 +187,10 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         // detector anything; without a barometer it works from speed and height above ground.
         val event = if (autoRecord) detector.update(f.timeMs, f.speed, if (hasBaro) v else Double.NaN, agl) else null
         val flying = detector.state == FlightState.FLYING
+        if (event == FlightEvent.TAKEOFF) {
+            // Each flight starts with a clean sheet.
+            thermals.clear(); thermalHistory.clear(); trail.clear()
+        }
 
         val w = wind.estimate(f.timeMs)
         windEstimate = w
@@ -185,6 +200,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
             airMass = Netto.airMass(v, turnRateDegS, tas, trimSinkMs)
             if (w != null && dtS > 0 && dtS < 10) thermals.drift(w.wind, dtS)
             thermals.add(f.lat, f.lon, airMass, f.timeMs)
+            thermalHistory.add(f.lat, f.lon, airMass, f.timeMs)
             thermalCore = thermals.bestLift(f.lat, f.lon, 400.0, f.timeMs)
             trail.add(f.lat, f.lon)
         } else {
@@ -230,6 +246,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         wind.reset()
         alerts.reset()
         thermals.clear()
+        thermalHistory.clear()
         trail.clear()
         fix = null
         altMsl = Double.NaN; pressureAlt = Double.NaN; terrainElev = Double.NaN
@@ -365,6 +382,16 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         const val PRE_TAKEOFF_MS = 5_000L
         /** A crash or flat battery loses at most this many seconds of log. */
         const val FLUSH_EVERY = 10
+        /**
+         * How long a sample rides the wind before it is pinned to the ground. Long enough to cover
+         * centring a climb (you and the air you sampled drift downwind together); beyond that,
+         * what is worth remembering is the place, since thermals come off terrain.
+         */
+        const val LIVE_THERMAL_MS = 5 * 60_000L
+        /** Longer than any flight: history is cleared at the next takeoff, not by age. */
+        const val WHOLE_FLIGHT_MS = 24 * 3_600_000L
+        /** About 16 hours of straight-line flying at one new 30 m cell every three seconds. */
+        const val HISTORY_CELLS = 20_000
         const val OPEN_RETRY_FIXES = 20
         const val GLIDE_TAU_S = 8.0
         /** A thermalling turn is 15-25 degrees a second; 8 is already a deliberate, held turn. */

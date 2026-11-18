@@ -76,6 +76,18 @@ class HeatGridTest {
         assertTrue(blue(g.pixels[8 * 16 + 8]) > red(g.pixels[8 * 16 + 8]))
     }
 
+    @Test fun aDensePatchOfOldSamplesIsAsFadedAsOneOldSample() {
+        val lone = HeatGrid(16)
+        lone.clear(); lone.splat(8, 8, 2f, 0.5f); lone.render(3f)
+        val dense = HeatGrid(16)
+        dense.clear()
+        for (y in 4..12) for (x in 4..12) dense.splat(x, y, 2f, 0.5f)
+        dense.render(3f)
+        val full = alpha(HeatGrid.color(2f, 3f, 1f))
+        assertEquals(alpha(lone.pixels[8 * 16 + 8]), alpha(dense.pixels[8 * 16 + 8]))
+        assertEquals(full / 2.0, alpha(dense.pixels[8 * 16 + 8]).toDouble(), 2.0)
+    }
+
     @Test fun edgesAndClearAreSafe() {
         val g = HeatGrid(8)
         g.clear()

@@ -167,6 +167,38 @@ class FlightComputerTest {
         assertEquals(FlightState.GROUND, r.computer.flightState)
     }
 
+    @Test fun liftIsRememberedWhereItWasMetForTheWholeFlight() {
+        // Where the sim was, over the ground, a minute into its first climb.
+        var spotLat = Double.NaN
+        var spotLon = Double.NaN
+        var spotTime = 0.0
+        var liveAtSpot = 0.0
+        var historyAtSpot = 0.0
+        var lastFixMs = 0L
+        val r = fly(wind = Wind(250.0, 5.0), eachFix = { c, sim ->
+            if (spotLat.isNaN() && c.circling && sim.trueVario > 1.5) { spotLat = sim.trueLat; spotLon = sim.trueLon; spotTime = sim.timeS }
+            // Look again 25 minutes later, just before landing.
+            if (!spotLat.isNaN() && sim.flying && sim.timeS > spotTime + 25 * 60) {
+                liveAtSpot = strongestNear(c.thermals, spotLat, spotLon, c.fix!!.timeMs)
+                historyAtSpot = strongestNear(c.thermalHistory, spotLat, spotLon, c.fix!!.timeMs)
+                lastFixMs = c.fix!!.timeMs
+            }
+        })
+        assertTrue("never looked", lastFixMs != 0L)
+        // The drifting map has long since carried that lift downwind (or aged it out)...
+        assertTrue("live map still shows $liveAtSpot there", liveAtSpot < 0.5)
+        // ...but the history still says there was a climb at that place.
+        assertTrue("history shows $historyAtSpot there", historyAtSpot > 1.0)
+        assertTrue(r.computer.thermalHistory.size > r.computer.thermals.size)
+    }
+
+    private fun strongestNear(map: app.cloudbase.core.flight.ThermalMap, lat: Double, lon: Double, nowMs: Long): Double {
+        var best = 0.0
+        val d = 60.0 / 111_000.0
+        map.forEach(lat - d, lon - d * 1.5, lat + d, lon + d * 1.5, nowMs) { _, _, climb, _ -> if (climb > best) best = climb }
+        return best
+    }
+
     @Test fun worksWithoutTerrain() {
         val r = fly(terrainKnown = false)
         assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)

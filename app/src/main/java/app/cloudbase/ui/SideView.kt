@@ -18,7 +18,6 @@ import app.cloudbase.core.airspace.Slab
 import app.cloudbase.core.airspace.crossSection
 import app.cloudbase.ui.Theme.dp
 import app.cloudbase.ui.Theme.sp
-import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -101,14 +100,17 @@ class SideView(context: Context) : View(context) {
         slabs = crossSection(candidates, start.lat, start.lon, bearing, spanM)
         relevance = slabs.map { policy.relevance(it.airspace) }
 
-        // Vertical window: ground to comfortably above us, opened up to include the next floor
-        // overhead. Snapped to whole steps so it does not breathe with every fix.
-        var hi = altMsl + 400
-        c.headroom?.let { hi = max(hi, altMsl + it.second + 250) }
-        // Coarser grid lines when the window is tall, so there are never more than about six.
-        step = when { hi - lo > 3000 -> 1000.0; hi - lo > 1300 -> 500.0; else -> 250.0 }
-        bottom = floor((lo - 60) / step) * step
-        top = ceil(hi / step) * step
+        // Vertical window: from the ground to just past the top of the layer we are in. Below all
+        // airspace that is the floor overhead; inside an airspace it is that airspace's ceiling,
+        // so the next boundary up is always in view and nothing beyond it takes up room. The
+        // window grows by itself as each boundary is crossed.
+        val boundary = nextBoundaryAbove()
+        val hi = if (boundary.isNaN()) altMsl + OPEN_SKY_M else boundary
+        bottom = lo - 60
+        // "Just past": enough above the boundary to see what starts there.
+        top = max(hi + max(MIN_PAST_M, (hi - bottom) * PAST_FRACTION), altMsl + MIN_PAST_M)
+        step = when { top - bottom > 3000 -> 1000.0; top - bottom > 1300 -> 500.0; else -> 250.0 }
+        bottom = floor(bottom / step) * step
 
         val u = Units(Hub.settings)
         val h = c.headroom
@@ -128,6 +130,25 @@ class SideView(context: Context) : View(context) {
             }
         }
         invalidate()
+    }
+
+    /**
+     * The first airspace boundary above the glider, AMSL: the lowest floor overhead, or the
+     * ceiling of an airspace we are inside, whichever comes first. NaN if there is none. Only
+     * airspace that alerts counts; informational sectors do not define the layers.
+     */
+    private fun nextBoundaryAbove(): Double {
+        val ground = groundAt(backM)
+        var best = Double.NaN
+        for (i in slabs.indices) {
+            val s = slabs[i]
+            if (relevance[i] != Relevance.ALERT || s.fromM > backM || s.toM < backM) continue
+            val floor = limitMsl(s.airspace.lower, ground)
+            val ceiling = if (s.airspace.upper.isUnlimited) Double.NaN else limitMsl(s.airspace.upper, ground)
+            val edge = if (floor > altMsl) floor else if (!ceiling.isNaN() && ceiling > altMsl) ceiling else Double.NaN
+            if (!edge.isNaN() && (best.isNaN() || edge < best)) best = edge
+        }
+        return best
     }
 
     /** Altitude AMSL of a limit at this moment, at a place where the ground is at [ground]. */
@@ -188,7 +209,9 @@ class SideView(context: Context) : View(context) {
             slabEdge.color = col
             canvas.drawPath(path, slabEdge)
             val floorY = yOf(limitMsl(sp.lower, groundAt(s.fromM)))
-            if (x1 - x0 > context.dp(40f) && relevance[i] == Relevance.ALERT) {
+            // Label a block at its floor, and only when that floor is in view: a block that starts
+            // above the window has no place to put a label that would not sit on another one.
+            if (x1 - x0 > context.dp(40f) && relevance[i] == Relevance.ALERT && floorY >= padT) {
                 namePaint.color = col
                 val ty = (floorY - context.dp(4f)).coerceIn(padT + namePaint.textSize, height - padB - context.dp(2f))
                 canvas.drawText("${AirspaceStyle.short(sp)} ${sp.lower.text}", max(x0, padL) + context.dp(4f), ty, namePaint)
@@ -233,5 +256,10 @@ class SideView(context: Context) : View(context) {
         /** Fraction of the range also shown behind the glider. */
         const val BEHIND = 0.12
         const val SAMPLES = 64
+        /** Sky shown above the glider when there is no airspace overhead. */
+        const val OPEN_SKY_M = 400.0
+        /** How far past the next boundary the view extends: this fraction of the height shown, at least MIN_PAST_M. */
+        const val PAST_FRACTION = 0.12
+        const val MIN_PAST_M = 80.0
     }
 }

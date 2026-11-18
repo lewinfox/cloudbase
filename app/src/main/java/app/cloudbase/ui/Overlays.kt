@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import app.cloudbase.Hub
+import app.cloudbase.core.FlightComputer
 import app.cloudbase.core.Geo
 import app.cloudbase.core.LocalProjection
 import app.cloudbase.core.airspace.Airspace
@@ -132,22 +133,30 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
     private var y0 = 0.0
     private var cx = 0     // lattice index of the view centre relative to that point
     private var cy = 0
+    private var pass = LIVE
 
     override fun draw(canvas: Canvas, p: MapView.Projection) {
         if (!Hub.settings.showThermals) return
-        val t = Hub.computer.thermals
+        val live = Hub.computer.thermals
+        val history = Hub.computer.thermalHistory
         val now = Hub.computer.fix?.timeMs ?: return
-        if (t.size == 0) return
+        if (live.size == 0 && history.size == 0) return
 
         // The bitmap covers SIZE cells around the middle of the view (about 2.9 km at 30 m cells).
         val midLat = (p.minLat + p.maxLat) / 2
         val midLon = p.lon(p.width / 2f)
         proj = LocalProjection(midLat, midLon)
-        cell = t.cellM
+        cell = live.cellM
         hasPhase = false
         grid.clear()
         val half = SIZE / 2 * cell
-        t.forEach(proj.lat(-half), proj.lon(-half), proj.lat(half), proj.lon(half), now, this)
+        val s = proj.lat(-half); val w = proj.lon(-half); val n = proj.lat(half); val e = proj.lon(half)
+        // Recent air first, drifting with the wind; then older samples where they were met. A
+        // sample is in exactly one of the two, so nothing is drawn twice.
+        pass = LIVE
+        live.forEach(s, w, n, e, now, this)
+        pass = HISTORY
+        history.forEach(s, w, n, e, now, this)
         if (!hasPhase) return
         grid.render(FULL_SCALE_MS)
         bitmap.setPixels(grid.pixels, 0, SIZE, 0, 0, SIZE, SIZE)
@@ -162,6 +171,15 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
     }
 
     override fun cell(lat: Double, lon: Double, climb: Double, ageMs: Long) {
+        // Live samples fade from full strength to the history level over the live window, so the
+        // hand-over between the two layers does not show as a jump in brightness.
+        val liveWindow = FlightComputer.LIVE_THERMAL_MS
+        val strength = if (pass == LIVE) {
+            1f - (1f - HISTORY_STRENGTH) * min(1.0, ageMs.toDouble() / liveWindow).toFloat()
+        } else {
+            if (ageMs < liveWindow) return // still shown by the live layer
+            HISTORY_STRENGTH
+        }
         val x = proj.x(lon)
         val y = proj.y(lat)
         if (!hasPhase) {
@@ -170,18 +188,21 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
             cx = Math.round(-x0 / cell).toInt()
             cy = Math.round(-y0 / cell).toInt()
         }
+        // The two layers' lattices are offset by the drift; history is snapped to the nearest
+        // pixel of the live one (at most half a cell out, which is nothing at that age).
         val ix = Math.round((x - x0) / cell).toInt() - cx + SIZE / 2
         val iy = cy + SIZE / 2 - Math.round((y - y0) / cell).toInt()
-        // Fade with age: an old thermal has probably moved on or died.
-        val fresh = 1f - 0.75f * min(1.0, ageMs / FADE_MS).toFloat()
-        grid.splat(ix, iy, climb.toFloat(), fresh)
+        grid.splat(ix, iy, climb.toFloat(), strength)
     }
 
     companion object {
         /** Lift or sink at which the colour is at its strongest. */
         const val FULL_SCALE_MS = 3.0f
-        const val FADE_MS = 15 * 60_000.0
+        /** How strongly old, ground-fixed samples are drawn next to fresh ones: faded, still legible. */
+        const val HISTORY_STRENGTH = 0.5f
         const val SIZE = 96
+        private const val LIVE = 0
+        private const val HISTORY = 1
     }
 }
 

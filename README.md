@@ -38,13 +38,17 @@ is carrying you on the map.
 or red (restricted, danger, military); informational airspace is thin grey. Tap an airspace for
 its limits, or to ignore it. The coloured cloud is the **thermal map**: warm where the air was
 rising (amber for weak lift through to deep red for strong), cool where it was sinking (pale to
-deep blue), drifting downwind with the air; the red ring marks the best lift nearby. The map **zooms in close when you start circling** and back out when you leave.
+deep blue), drifting downwind with the air; the red ring marks the best lift nearby. That drift only lasts
+five minutes, long enough to centre the climb you are in. After that a patch is shown, faded,
+at the ground location where you met it, and stays there for the rest of the flight: thermals
+come off terrain, so the place is what is worth remembering. The map **zooms in close when you start circling** and back out when you leave.
 The dashed line ends in an **×** where your present glide meets the ground (while climbing it
 shows where you will be in a minute instead).
 
 **Side view.** A slice through the air along your direction of travel: terrain, airspace as
 blocks at their real heights, your projected path, and the headline number — how far below the
-next airspace floor you are. Tap to change the range (2, 5, 10 km).
+next airspace floor you are. It shows from the ground to just past the next boundary above you
+(the floor overhead, or the top of the airspace you are in) and opens up as you cross each one. Tap to change the range (2, 5, 10 km).
 
 **Alerts.** A banner, a tone and (optionally) a spoken warning when you are *near* an airspace
 (amber), *about to enter* one on your present track and climb (red, with seconds to go), or
