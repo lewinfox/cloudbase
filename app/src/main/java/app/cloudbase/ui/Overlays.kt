@@ -113,8 +113,8 @@ class AirspaceOverlay(context: Context) : MapView.Overlay {
 }
 
 /**
- * The lift/sink heat map: a smooth cloud over the air that has been flown through, warm colours
- * where it was rising and cool where it was sinking, stronger colour for stronger air.
+ * The lift/sink heat map: a smooth cloud over the air that has been flown through, on one
+ * continuous colour scale from dark (sinking) to bright (rising).
  *
  * Every thermal-map cell sits on one regular lattice (they all drift together), so the cells map
  * straight onto the pixels of a small bitmap, which [HeatGrid] smooths and the canvas scales up.
@@ -158,7 +158,7 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
         pass = HISTORY
         history.forEach(s, w, n, e, now, this)
         if (!hasPhase) return
-        grid.render(FULL_SCALE_MS)
+        grid.render(SCALE_MS)
         bitmap.setPixels(grid.pixels, 0, SIZE, 0, 0, SIZE, SIZE)
 
         // Pixel (i, j) is the lattice point (cx - SIZE/2 + i, cy + SIZE/2 - j): north is up.
@@ -196,8 +196,8 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
     }
 
     companion object {
-        /** Lift or sink at which the colour is at its strongest. */
-        const val FULL_SCALE_MS = 3.0f
+        /** Sigmoid scale of the colour map, m/s: about three quarters of each half is used by this much climb or sink. */
+        const val SCALE_MS = 2.0f
         /** How strongly old, ground-fixed samples are drawn next to fresh ones: faded, still legible. */
         const val HISTORY_STRENGTH = 0.6f
         const val SIZE = 96

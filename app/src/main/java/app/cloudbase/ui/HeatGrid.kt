@@ -2,6 +2,7 @@ package app.cloudbase.ui
 
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.tanh
 
 /**
  * Turns scattered lift/sink cells into a smooth picture: a small grid, one pixel per thermal-map
@@ -45,8 +46,8 @@ class HeatGrid(val n: Int) {
         }
     }
 
-    /** Fill [pixels]. [fullScale] is the climb or sink (m/s) at which the colour is at its strongest. */
-    fun render(fullScale: Float) {
+    /** Fill [pixels]. [scale] sets how quickly the colours run out towards the ends: see [position]. */
+    fun render(scale: Float) {
         for (i in pixels.indices) {
             val w = weight[i]
             if (w < 1e-5f) { pixels[i] = 0; continue }
@@ -55,7 +56,7 @@ class HeatGrid(val n: Int) {
             // Opacity is coverage times the average say of what landed here, so a whole patch of
             // old samples is as faded as a single old sample, however densely it was flown.
             val coverage = min(1f, cover[i] / CENTRE_WEIGHT)
-            pixels[i] = color(v, fullScale, coverage * (w / cover[i]))
+            pixels[i] = color(v, scale, coverage * (w / cover[i]))
         }
     }
 
@@ -66,33 +67,39 @@ class HeatGrid(val n: Int) {
         private const val CENTRE_WEIGHT = (6 / 16f) * (6 / 16f)
         /** Air moving less than this is shown as nothing: it is within the noise of the estimate. */
         const val DEAD_BAND = 0.2f
-        const val MAX_ALPHA = 235
+        const val ALPHA = 225
 
-        // Graduated ramps, weakest to strongest, so strength reads from the hue as well as the
-        // opacity. Every stop is fully saturated, and chosen to be a colour the topographic map
-        // underneath does not use: the map is muted greens, greys, browns and a pale grey-blue,
-        // which is exactly what a soft blue or a dull red disappears into in sunlight. Lift runs
-        // yellow through orange and red to hot pink; sink runs cyan through electric blue to violet.
-        private val LIFT = intArrayOf(0xFFD600, 0xFF9100, 0xFF3D00, 0xFF1744, 0xD5006D)
-        private val SINK = intArrayOf(0x00E5FF, 0x00B0FF, 0x2979FF, 0x3D5AFE, 0x651FFF)
+        /**
+         * One continuous scale from sink to climb: the "plasma" colour map, deep indigo through
+         * purple, magenta and orange to bright yellow. Chosen because (1) it gets steadily
+         * brighter from one end to the other, so stronger climb is always lighter and the order
+         * survives glare and colour-blindness, where a rainbow's does not; and (2) unlike viridis
+         * it has no green or grey-blue in it, which are the colours of the map underneath.
+         */
+        private val PLASMA = intArrayOf(0x0D0887, 0x5402A3, 0x8B0AA5, 0xB93289, 0xDB5C68, 0xF48849, 0xFEBC2A, 0xF0F921)
 
-        /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area. */
-        fun color(climb: Float, fullScale: Float, coverage: Float): Int {
-            val mag = abs(climb)
-            if (mag <= DEAD_BAND || coverage <= 0f) return 0
-            val t = min(1f, (mag - DEAD_BAND) / (fullScale - DEAD_BAND))
-            val ramp = if (climb > 0) LIFT else SINK
-            val pos = t * (ramp.size - 1)
-            val k = min(pos.toInt(), ramp.size - 2)
+        /**
+         * Where a climb value sits on the scale, 0..1. A sigmoid (tanh) centred on still air:
+         * most of the colour range is spent on the ordinary +-2 m/s where telling values apart
+         * matters, and extreme values flatten out towards the ends instead of all looking the
+         * same shade once past a hard limit. [scale] is the climb at which 76 % of the way from
+         * the middle to the end has been used.
+         */
+        fun position(climb: Float, scale: Float): Float = 0.5f + 0.5f * tanh(climb / scale)
+
+        /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area and old samples. */
+        fun color(climb: Float, scale: Float, coverage: Float): Int {
+            if (abs(climb) <= DEAD_BAND || coverage <= 0f) return 0
+            val pos = position(climb, scale) * (PLASMA.size - 1)
+            val k = min(pos.toInt(), PLASMA.size - 2)
             val f = pos - k
-            val a = ramp[k]
-            val b = ramp[k + 1]
+            val a = PLASMA[k]
+            val b = PLASMA[k + 1]
             val r = mix(a shr 16 and 0xFF, b shr 16 and 0xFF, f)
             val g = mix(a shr 8 and 0xFF, b shr 8 and 0xFF, f)
             val bl = mix(a and 0xFF, b and 0xFF, f)
-            // Weak air is lighter, strong air nearly solid; even the weakest is opaque enough to
-            // read in sunlight, and nothing is fully opaque so the map still shows through.
-            val alpha = (MAX_ALPHA * coverage * (0.55f + 0.45f * t)).toInt()
+            // The colour says how strong; opacity only says how well covered and how fresh.
+            val alpha = (ALPHA * min(1f, coverage)).toInt()
             return (alpha shl 24) or (r shl 16) or (g shl 8) or bl
         }
 
