@@ -1,5 +1,7 @@
 # Cloudbase
 
+<img src="docs/logo.svg" width="96" align="right" alt="Cloudbase logo">
+
 A paragliding flight instrument for an Android phone: moving terrain map, ground speed,
 altitude, climb, wind, airspace on the map and from the side with alerts before you breach it,
 a lift/sink heat map for centring thermals, and IGC flight logs that start and stop by
