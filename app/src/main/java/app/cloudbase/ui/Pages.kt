@@ -113,6 +113,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
         section("Airspace alerts")
         toggle("Alert tone", s.alertSound) { s.alertSound = it }
         toggle("Spoken alert", s.alertVoice) { s.alertVoice = it }
+        row("Mandatory broadcast zones", if (s.alertMbz) "Alert" else "Show only") { s.alertMbz = !s.alertMbz; Hub.applySettings(); act.airspaceChanged(); rebuild() }
         row("Warn within (sideways)", "${fmt(s.horizontalMarginM)} m") { number("Horizontal margin, metres", s.horizontalMarginM, 50.0, 2000.0) { s.horizontalMarginM = it } }
         row("Warn within (vertical)", "${fmt(s.verticalMarginM)} m") { number("Vertical margin, metres", s.verticalMarginM, 20.0, 500.0) { s.verticalMarginM = it } }
         row("Look ahead", "${fmt(s.lookaheadS)} s") { number("Predict this many seconds ahead", s.lookaheadS, 15.0, 180.0) { s.lookaheadS = it } }
@@ -124,6 +125,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
             choose("Speed in", listOf("km/h", "knots", "mph"), speeds.indexOf(s.speedUnit).coerceAtLeast(0)) { s.speedUnit = speeds[it] }
         }
         toggle("Thermal heat map", s.showThermals) { s.showThermals = it }
+        toggle("Zoom in when thermalling", s.thermalZoom) { s.thermalZoom = it }
+        toggle("Glide-to-ground line", s.showGlide) { s.showGlide = it }
         toggle("Side view", s.showSideView) { s.showSideView = it; act.applyLayout() }
         toggle("Keep screen on", s.keepScreenOn) { s.keepScreenOn = it; act.applyLayout() }
 
@@ -141,7 +144,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
             act.restartService()
             rebuild()
         }
-        note("Flies a simulated thermal flight in the Swiss Alps at 4× speed, through the same code as real sensors.")
+        note("Flies a simulated thermal flight from Paekākāriki at 4× speed, through the same code as real sensors. It climbs into the Wellington control area on purpose, to show the alerts. The ground in the side view is simplified.")
         note("Cloudbase ${Hub.version()} · Map © OpenStreetMap contributors, SRTM; style © OpenTopoMap (CC-BY-SA) · Terrain: Mapzen/AWS terrain tiles · Airspace: openAIP (CC BY-NC 4.0)")
     }
 

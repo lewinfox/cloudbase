@@ -21,10 +21,16 @@ class Settings(context: Context) {
     var horizontalMarginM: Double by Num("margin_h", 300.0)
     var verticalMarginM: Double by Num("margin_v", 100.0)
     var lookaheadS: Double by Num("lookahead", 60.0)
+    /** Also alert for mandatory broadcast zones (uncontrolled, but radio calls are required). */
+    var alertMbz: Boolean by Bool("alert_mbz", false)
     var autoRecord: Boolean by Bool("auto_record", true)
     var keepScreenOn: Boolean by Bool("keep_screen_on", true)
     var showSideView: Boolean by Bool("side_view", true)
     var showThermals: Boolean by Bool("thermals", true)
+    /** Line on the map to where the present glide meets the ground. */
+    var showGlide: Boolean by Bool("glide_line", true)
+    /** Zoom the map in close while circling in a thermal. */
+    var thermalZoom: Boolean by Bool("thermal_zoom", true)
     var demo: Boolean by Bool("demo", false)
     // Until the first GPS fix the map opens on New Zealand, which is where this app is flown.
     var mapLat: Double by Num("map_lat", -41.5, allowNonPositive = true)

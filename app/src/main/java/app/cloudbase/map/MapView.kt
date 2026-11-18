@@ -87,7 +87,7 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
     var centerLon: Double = 0.0
         set(v) { field = Geo.norm180(v); changed() }
     var zoom: Double = source.minZoom.toDouble()
-        set(v) { field = v.coerceIn(source.minZoom.toDouble(), source.maxZoom + OVERZOOM); changed() }
+        set(v) { field = v.coerceIn(source.minZoom.toDouble(), maxZoom); changed() }
 
     /** True while the map follows the aircraft; a user pan (or a zoom that moves the centre) clears it. */
     var follow: Boolean = true
@@ -96,6 +96,15 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
     val overlays: MutableList<Overlay> = ArrayList()
 
     private val density = resources.displayMetrics.density
+
+    /**
+     * Zoom levels are in physical pixels, but map tiles are drawn for ~160 dpi screens: shown 1:1
+     * on a modern phone their labels are unreadably small. So tiles are picked this many levels
+     * coarser and scaled up, which also means fewer tiles to download and keep. Add this to a
+     * zoom meant as "how it looks" (e.g. 15 = street scale) to get the value for [zoom].
+     */
+    val densityZoom: Double = ln(density.toDouble().coerceAtLeast(1.0)) / LN2
+    private val maxZoom get() = source.maxZoom + OVERZOOM + densityZoom
     private val dst = RectF()
     private val src = Rect()
     private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -176,7 +185,7 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
     }
 
     private fun drawTiles(canvas: Canvas) {
-        val z = floor(zoom + 0.3).toInt().coerceIn(source.minZoom, source.maxZoom)
+        val z = floor(zoom - densityZoom + 0.5).toInt().coerceIn(source.minZoom, source.maxZoom)
         val tileSize = Mercator.TILE * 2.0.pow(zoom - z) // on-screen size of one tile
         val n = 1 shl z
         // Screen position of tile (0, 0): the view centre minus the centre's world position.
@@ -200,7 +209,11 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
         }
     }
 
-    /** Draws the tile, or failing that the best cached ancestor scaled up; else leaves the placeholder. */
+    /**
+     * Draws the tile, or failing that the best ancestor scaled up; else leaves the placeholder.
+     * A missing tile also asks for its parent and grandparent, so that with no signal the map falls
+     * back to whatever coarser tiles are on disk instead of staying blank.
+     */
     private fun drawTile(canvas: Canvas, z: Int, x: Int, y: Int) {
         val bmp = layer.get(z, x, y)
         if (bmp != null) {
@@ -209,7 +222,7 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
         }
         for (dz in 1..MAX_ANCESTOR_LEVELS) {
             if (z - dz < source.minZoom) return
-            val ancestor = layer.peek(z - dz, x shr dz, y shr dz) ?: continue
+            val ancestor = (if (dz <= 2) layer.get(z - dz, x shr dz, y shr dz) else layer.peek(z - dz, x shr dz, y shr dz)) ?: continue
             val size = ancestor.width shr dz // our tile's footprint inside the ancestor
             val sx = (x and ((1 shl dz) - 1)) * size
             val sy = (y and ((1 shl dz) - 1)) * size
@@ -242,7 +255,7 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
 
     /** Sets the zoom keeping the geographic point under ([fx], [fy]) fixed on screen. */
     private fun zoomAbout(newZoom: Double, fx: Float, fy: Float) {
-        val z = newZoom.coerceIn(source.minZoom.toDouble(), source.maxZoom + OVERZOOM)
+        val z = newZoom.coerceIn(source.minZoom.toDouble(), maxZoom)
         if (z == zoom) return
         val lat = projection.lat(fy)
         val lon = projection.lon(fx)

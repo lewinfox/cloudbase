@@ -37,7 +37,7 @@ object Hub {
         settings = Settings(app)
         tiles = TileStore(File(app.filesDir, "tiles"), "Cloudbase/${version()} (Android paragliding instrument)")
         elevation = Elevation(tiles)
-        computer = FlightComputer { lat, lon -> elevation.at(lat, lon) }
+        computer = FlightComputer { lat, lon -> terrainAt(lat, lon) }
         logs = FlightLogs(File(app.getExternalFilesDir(null) ?: app.filesDir, "flights"))
         computer.logSink = logs
         airspace = AirspaceRepo(File(app.filesDir, "airspace"))
@@ -62,12 +62,19 @@ object Hub {
 
     const val HOME_COUNTRY = "nz"
 
+    /** Set while the demo flight runs: the simulator's own idea of the ground, which the real terrain would contradict. */
+    var demoTerrain: ((Double, Double) -> Double)? = null
+
+    /** Ground elevation AMSL, NaN if not known (yet). */
+    fun terrainAt(lat: Double, lon: Double): Double = demoTerrain?.invoke(lat, lon) ?: elevation.at(lat, lon)
+
     /** Push settings into the flight computer. Call after any setting changes. */
     fun applySettings() {
         val s = settings
         computer.trimSpeedMs = s.trimKmh / 3.6
         computer.trimSinkMs = s.trimSink
         computer.autoRecord = s.autoRecord
+        computer.computeGlide = s.showGlide
         computer.igcHeader = IgcHeader(
             s.pilot, s.glider, s.gliderId, version(),
             "${Build.MANUFACTURER} ${Build.MODEL}", computer.hasBaro,
@@ -75,7 +82,7 @@ object Hub {
         computer.setAirspace(airspace.index, policy(), MonitorConfig(s.horizontalMarginM, s.verticalMarginM, s.lookaheadS))
     }
 
-    fun policy() = AirspacePolicy(ignoredNames = settings.ignoredAirspaces)
+    fun policy() = AirspacePolicy(ignoredNames = settings.ignoredAirspaces, alertMbz = settings.alertMbz)
 
     fun version(): String = try {
         app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "?"

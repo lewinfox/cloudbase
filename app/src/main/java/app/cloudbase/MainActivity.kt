@@ -29,6 +29,7 @@ import app.cloudbase.map.TileLayer
 import app.cloudbase.map.TileSource
 import app.cloudbase.ui.AircraftOverlay
 import app.cloudbase.ui.AirspaceOverlay
+import app.cloudbase.ui.AirspaceStyle
 import app.cloudbase.ui.AirspacePage
 import app.cloudbase.ui.FlightsPage
 import app.cloudbase.ui.InstrumentBar
@@ -63,6 +64,13 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastVersion = -1L
     private var lastStatus = ""
+    private var zoomedToFix = false
+    private var wasCircling = false
+    /** Zoom to go back to when the thermal is left; NaN when we did not zoom in for it. */
+    private var zoomBeforeThermal = Double.NaN
+    // Zoom levels as they look on screen, whatever the pixel density.
+    private val flyingZoom get() = FLYING_ZOOM + map.densityZoom
+    private val closeZoom get() = THERMAL_ZOOM + map.densityZoom
     private val tick = object : Runnable {
         override fun run() {
             val v = Hub.computer.version
@@ -112,8 +120,8 @@ class MainActivity : Activity() {
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(mapButton("≡") { showMenu() }, buttonLp())
-            addView(mapButton("+") { map.zoom = (map.zoom + 1).roundToInt().toDouble() }, buttonLp())
-            addView(mapButton("−") { map.zoom = (map.zoom - 1).roundToInt().toDouble() }, buttonLp())
+            addView(mapButton("+") { map.zoom = map.zoom + 1 }, buttonLp())
+            addView(mapButton("−") { map.zoom = map.zoom - 1 }, buttonLp())
             addView(recenter, buttonLp())
         }
         val mapFrame = FrameLayout(this).apply {
@@ -169,7 +177,14 @@ class MainActivity : Activity() {
     private fun refresh() {
         val c = Hub.computer
         instruments.refresh()
-        c.fix?.let { if (map.follow) map.setCenter(it.lat, it.lon) }
+        c.fix?.let {
+            if (map.follow) {
+                // First fix: come in from the country-wide opening view to flying scale.
+                if (!zoomedToFix) { zoomedToFix = true; if (map.zoom < flyingZoom - 2) map.zoom = flyingZoom }
+                thermalZoom(c.circling)
+                map.setCenter(it.lat, it.lon)
+            }
+        }
         map.invalidate()
         if (side.visibility == View.VISIBLE) side.refresh()
         showBanner(c.statuses.firstOrNull())
@@ -180,6 +195,26 @@ class MainActivity : Activity() {
         } else if (c.flightState == FlightState.FLYING) "Flying · not recording" else "Ready · log starts at takeoff"
         chip.text = if (Hub.gpsStatus.isEmpty()) rec else if (c.recording) "$rec · ${Hub.gpsStatus}" else Hub.gpsStatus
         chip.setTextColor(if (c.recording) Theme.DANGER else Theme.TEXT)
+    }
+
+    /**
+     * Zoom in close while circling, so the lift/sink map around the glider is big enough to
+     * centre on, and back out to where the pilot had it when the thermal is left. Only while
+     * the map is following: a pilot who has panned away is looking at something else.
+     */
+    private fun thermalZoom(circling: Boolean) {
+        if (circling == wasCircling) return
+        wasCircling = circling
+        if (circling) {
+            if (Hub.settings.thermalZoom && map.zoom < closeZoom) {
+                zoomBeforeThermal = map.zoom
+                map.zoom = closeZoom
+            }
+        } else if (!zoomBeforeThermal.isNaN()) {
+            // Leave the zoom alone if the pilot changed it during the climb.
+            if (map.zoom == closeZoom) map.zoom = zoomBeforeThermal
+            zoomBeforeThermal = Double.NaN
+        }
     }
 
     private fun showBanner(s: AirspaceStatus?) {
@@ -247,7 +282,7 @@ class MainActivity : Activity() {
     private fun showAirspaceAt(lat: Double, lon: Double) {
         val hits = airspaceOverlay.visible.filter { it.contains(lat, lon) }
         if (hits.isEmpty()) return
-        val labels = hits.map { "${it.kind} ${it.name}\n${it.lower.text} – ${it.upper.text}" }.toTypedArray()
+        val labels = hits.map { "${AirspaceStyle.title(it)}\n${it.lower.text} – ${it.upper.text}" }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Airspace here").setItems(labels) { _, i -> showAirspace(hits[i]) }
             .setNegativeButton("Close", null).show()
     }
@@ -255,8 +290,9 @@ class MainActivity : Activity() {
     private fun showAirspace(a: Airspace) {
         val s = Hub.settings
         val text = buildString {
-            append("Class ${a.cls}"); if (a.type.isNotEmpty()) append(" · ${a.type}")
-            append("\nFrom ${a.lower.text} to ${a.upper.text}")
+            append("From ${a.lower.text} to ${a.upper.text}")
+            if (a.type.isNotEmpty()) append("\nType ${a.type}")
+            append("\nListed as class ${a.cls} (the name is more reliable)")
             a.frequency?.let { append("\nFrequency $it") }
         }
         AlertDialog.Builder(this).setTitle(a.name).setMessage(text)
@@ -326,13 +362,17 @@ class MainActivity : Activity() {
     companion object {
         const val REQ_PERMISSIONS = 1
         const val REQ_IMPORT = 2
+        /** About 3 km across the screen: enough to see where you are going. */
+        const val FLYING_ZOOM = 14.0
+        /** About 600 m across: one thermal fills the map. */
+        const val THERMAL_ZOOM = 16.0
         /** Whether the UI is in front; the service uses it to decide when it has been forgotten. */
         @Volatile var visible = false
 
         /** One line for the banner: what, where, how soon. */
         fun describe(s: AirspaceStatus, u: Units): String {
             val a = s.airspace
-            val name = "${a.kind} ${a.name}"
+            val name = AirspaceStyle.title(a)
             return when (s.level) {
                 AlertLevel.INSIDE -> "INSIDE $name · ${a.lower.text}–${a.upper.text}"
                 AlertLevel.IMMINENT -> {

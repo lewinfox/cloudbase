@@ -44,6 +44,7 @@ android {
 tasks.withType<Test>().configureEach {
     if (!project.hasProperty("screenshots")) exclude("**/screenshots/**")
     systemProperty("screenshotDir", rootProject.file("docs/screenshots").absolutePath)
+    systemProperty("airspaceSamples", System.getenv("AIRSPACE_SAMPLES") ?: "")
 }
 
 dependencies {

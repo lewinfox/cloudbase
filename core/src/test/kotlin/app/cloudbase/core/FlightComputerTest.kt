@@ -92,6 +92,41 @@ class FlightComputerTest {
         assertTrue(r.computer.pressureAlt.isNaN())
     }
 
+    @Test fun glideLineOnlyWhileDescendingAndAtASaneRatio() {
+        var onGlide = 0
+        var whileClimbing = 0
+        var worstRatio = 0.0
+        fly(wind = Wind(250.0, 0.5), eachFix = { c, sim ->
+            if (!sim.flying) return@fly
+            if (c.glideImpact != null) {
+                onGlide++
+                if (sim.trueVario > 0.8) whileClimbing++
+                // Trim is about 10.5 m/s at 1.1 m/s sink: glide 9.5 in still air.
+                if (c.glideRatio > worstRatio) worstRatio = c.glideRatio
+            }
+        })
+        assertTrue("glide line shown on $onGlide fixes", onGlide > 100)
+        assertTrue("shown on $whileClimbing fixes while climbing hard", whileClimbing < 10)
+        assertTrue("largest glide ratio $worstRatio", worstRatio < 40)
+    }
+
+    @Test fun knowsWhenItIsCircling() {
+        var agree = 0
+        var total = 0
+        var flips = 0
+        var last = false
+        fly(eachFix = { c, sim ->
+            if (c.circling != last) { flips++; last = c.circling }
+            if (!sim.flying) return@fly
+            total++
+            // The sim circles while it is in lift and glides straight otherwise.
+            if (c.circling == (sim.trueVario > 0.3)) agree++
+        })
+        assertTrue("agreed on $agree of $total fixes", agree > total * 0.85)
+        // Two thermals: into and out of each, with no flickering.
+        assertEquals(4, flips)
+    }
+
     @Test fun worksWithoutTerrain() {
         val r = fly(terrainKnown = false)
         assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)

@@ -66,7 +66,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        startForegroundCompat()
+        if (!startForegroundCompat()) { stopSelf(); return START_NOT_STICKY }
         if (!Hub.serviceRunning) {
             Hub.serviceRunning = true
             if (Hub.settings.demo) startDemo() else startSensors()
@@ -84,6 +84,8 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         alerter.shutdown()
         releaseWakeLock()
         Hub.serviceRunning = false
+        Hub.demoTerrain = null
+        sim = null
         Hub.gpsStatus = "Stopped"
         super.onDestroy()
     }
@@ -177,6 +179,12 @@ class FlightService : Service(), LocationListener, SensorEventListener {
     private fun startDemo() {
         val s = Hub.settings
         sim = FlightSim(seed = 7, startLat = DEMO_LAT, startLon = DEMO_LON, groundElevM = DEMO_ELEV, trimSpeed = s.trimKmh / 3.6)
+        // A hill at the launch and flat ground 600 m below everywhere else, which is the world
+        // the simulator flies in.
+        Hub.demoTerrain = { lat, lon ->
+            val d = app.cloudbase.core.Geo.distance(lat, lon, DEMO_LAT, DEMO_LON)
+            DEMO_ELEV - 600.0 * (d / 900.0).coerceAtMost(1.0)
+        }
         simEpoch = System.currentTimeMillis()
         simFixAt = 0.0
         simBaroAt = 0.0
@@ -237,11 +245,18 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         wakeLock = null
     }
 
-    private fun startForegroundCompat() {
+    private fun startForegroundCompat(): Boolean {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Flight", NotificationManager.IMPORTANCE_LOW))
-        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        else startForeground(NOTIFICATION_ID, notification())
+        try {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            else startForeground(NOTIFICATION_ID, notification())
+            return true
+        } catch (e: RuntimeException) {
+            // Location permission revoked, or the system restarted us in the background where a
+            // location service may not be started. The activity starts us again when it opens.
+            return false
+        }
     }
 
     private fun notification(): Notification {
@@ -272,10 +287,11 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         const val DEMO_TICK_MS = 50L
         const val DEMO_SPEED = 4.0
         const val SIM_DT = 0.04
-        // Demo launch: above Fiesch in the Swiss Alps.
-        const val DEMO_LAT = 46.4096
-        const val DEMO_LON = 8.1356
-        const val DEMO_ELEV = 2200.0
+        // Demo launch: the hills behind Paekākāriki, under the Wellington control area, so the
+        // simulated climb runs into real airspace and shows the alerts.
+        const val DEMO_LAT = -40.975
+        const val DEMO_LON = 174.975
+        const val DEMO_ELEV = 700.0
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, FlightService::class.java))

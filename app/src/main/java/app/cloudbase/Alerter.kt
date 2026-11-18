@@ -56,7 +56,9 @@ class Alerter(private val context: Context) {
 
     companion object {
         fun phrase(s: AirspaceStatus): String {
-            val what = s.airspace.kind
+            // The spoken name is the place ("WELLINGTON"), not the designator, which is noise by ear.
+            val parts = s.airspace.name.split(',').map { it.trim() }
+            val what = (if (parts.size >= 2) parts.drop(1).joinToString(" ") else s.airspace.name).lowercase()
             return when (s.level) {
                 AlertLevel.INSIDE -> "Inside airspace, $what"
                 AlertLevel.IMMINENT -> {

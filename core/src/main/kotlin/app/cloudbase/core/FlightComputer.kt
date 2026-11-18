@@ -12,6 +12,7 @@ import app.cloudbase.core.airspace.MonitorConfig
 import app.cloudbase.core.flight.FlightDetector
 import app.cloudbase.core.flight.FlightEvent
 import app.cloudbase.core.flight.FlightState
+import app.cloudbase.core.flight.GlideReach
 import app.cloudbase.core.flight.Netto
 import app.cloudbase.core.flight.ThermalMap
 import app.cloudbase.core.flight.VarioFilter
@@ -65,11 +66,19 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
     /** Vertical speed of the air itself, m/s. */
     var airMass = Double.NaN; private set
     var turnRateDegS = 0.0; private set
+    /** True while turning steadily one way, i.e. working a thermal. */
+    var circling = false; private set
     var windEstimate: WindEstimate? = null; private set
     var statuses: List<AirspaceStatus> = emptyList(); private set
     /** Lowest relevant airspace floor overhead and the metres of clearance to it. */
     var headroom: Pair<Airspace, Double>? = null; private set
     var thermalCore: ThermalMap.Core? = null; private set
+    /** Glide ratio over the ground, averaged over the last several seconds; NaN when not descending. */
+    var glideRatio = Double.NaN; private set
+    /** Where the current track and glide ratio meet the ground, or null (climbing, or terrain unknown). */
+    var glideImpact: LatLon? = null; private set
+    /** Set false to skip the terrain walk when the line is not shown. */
+    var computeGlide = true
     var nearby: List<Airspace> = emptyList(); private set
     val flightState: FlightState get() = detector.state
     val takeoffTimeMs: Long get() = detector.takeoffTimeMs
@@ -99,6 +108,10 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
     private var lastTrack = Double.NaN
     private var mslOffset = 0.0
     private var mslOffsetN = 0
+    private var avgSpeed = Double.NaN
+    private var turningS = 0.0
+    private var straightS = 0.0
+    private var avgClimb = Double.NaN
 
     private var writer: IgcWriter? = null
     private var unflushed = 0
@@ -154,6 +167,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
             turnRateDegS = 0.0
         }
         lastTrack = f.track
+        updateCircling(dtS, flying = detector.state == FlightState.FLYING)
 
         val v = climb
         // Climb rate from GPS altitude alone is too noisy (±0.6 m/s standing still) to tell the
@@ -176,6 +190,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
             thermalCore = null
         }
 
+        updateGlide(f, v, dtS, flying)
         checkAirspace(f, v)
         record(f, event)
         if (event != null) onFlightEvent?.invoke(event)
@@ -226,6 +241,37 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
             pressureAlt = Double.NaN
             altMsl = if (vario.initialised) vario.altitude else f.altMsl
         }
+    }
+
+    /**
+     * Circling starts after [CIRCLE_ENTER_S] of steady turning (about half a turn, so a single
+     * course change does not count) and ends after [CIRCLE_EXIT_S] of flying straight (so
+     * re-centring or one wide turn does not drop out of it).
+     */
+    private fun updateCircling(dtS: Double, flying: Boolean) {
+        if (!flying || dtS <= 0 || dtS > 5) { circling = false; turningS = 0.0; straightS = 0.0; return }
+        if (abs(turnRateDegS) >= CIRCLE_RATE_DEG_S) { turningS += dtS; straightS = 0.0 } else { straightS += dtS; turningS = 0.0 }
+        if (!circling && turningS >= CIRCLE_ENTER_S) circling = true
+        if (circling && straightS >= CIRCLE_EXIT_S) circling = false
+    }
+
+    /**
+     * Glide ratio from smoothed ground speed and sink (time constant [GLIDE_TAU_S]): a single
+     * second's values would swing the line about with every bump.
+     */
+    private fun updateGlide(f: Fix, v: Double, dtS: Double, flying: Boolean) {
+        if (!flying || v.isNaN() || dtS <= 0 || dtS > 5) {
+            avgSpeed = Double.NaN; avgClimb = Double.NaN
+            glideRatio = Double.NaN; glideImpact = null
+            return
+        }
+        if (avgSpeed.isNaN()) { avgSpeed = f.speed; avgClimb = v } else {
+            val k = dtS / (GLIDE_TAU_S + dtS)
+            avgSpeed += k * (f.speed - avgSpeed)
+            avgClimb += k * (v - avgClimb)
+        }
+        glideRatio = if (avgClimb < -MIN_SINK_FOR_GLIDE && avgSpeed > 2) avgSpeed / -avgClimb else Double.NaN
+        glideImpact = if (computeGlide && !glideRatio.isNaN()) GlideReach.impact(f.lat, f.lon, altMsl, f.track, glideRatio, terrain) else null
     }
 
     private fun checkAirspace(f: Fix, v: Double) {
@@ -279,6 +325,13 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         const val PRE_TAKEOFF_MS = 5_000L
         /** A crash or flat battery loses at most this many seconds of log. */
         const val FLUSH_EVERY = 10
+        const val GLIDE_TAU_S = 8.0
+        /** A thermalling turn is 15-25 degrees a second; 8 is already a deliberate, held turn. */
+        const val CIRCLE_RATE_DEG_S = 8.0
+        const val CIRCLE_ENTER_S = 10.0
+        const val CIRCLE_EXIT_S = 12.0
+        /** Sinking slower than this is as good as level: the glide line would run off the map. */
+        const val MIN_SINK_FOR_GLIDE = 0.3
     }
 }
 

@@ -13,7 +13,7 @@ class TileSource(
 
     companion object {
         val OPEN_TOPO = TileSource(
-            "opentopo", "https://tile.opentopomap.org/{z}/{x}/{y}.png", 2, 15,
+            "opentopo", "https://tile.opentopomap.org/{z}/{x}/{y}.png", 2, 17,
             "© OpenStreetMap contributors, SRTM · OpenTopoMap (CC-BY-SA)",
         )
         val TERRARIUM = TileSource(

@@ -31,7 +31,7 @@ class RegionPlanTest {
     @Test fun zoomsAreClampedToTheSourceRange() {
         // OpenTopo starts at z2: zooms 0..2 is just z2's 16 tiles.
         assertEquals(16, downloader.plan(TileSource.OPEN_TOPO, -85.0511, -180.0, 85.0511, 180.0, 0..2).tiles)
-        assertEquals(0, downloader.plan(TileSource.OPEN_TOPO, 46.0, 7.0, 46.0, 7.0, 16..18).tiles)
+        assertEquals(0, downloader.plan(TileSource.OPEN_TOPO, 46.0, 7.0, 46.0, 7.0, 18..20).tiles)
     }
 
     @Test fun cachedTilesAreCounted() {

@@ -25,6 +25,17 @@ object AirspaceStyle {
     val BLUE = Color.parseColor("#1E5AA8")
     val GREY = Color.parseColor("#7A8089")
 
+    /**
+     * Name to show. Many names already say what the airspace is ("NZA635, WELLINGTON, CTA C");
+     * the type is only added when the name does not. The exported class is left out on purpose:
+     * for New Zealand it is unreliable, and where it matters it is in the name.
+     */
+    fun title(a: Airspace): String =
+        if (a.type.isEmpty() || a.name.contains(a.type, ignoreCase = true)) a.name else "${a.type} ${a.name}"
+
+    /** A few characters for labelling a block in the side view. */
+    fun short(a: Airspace): String = a.name.substringBefore(',').take(10)
+
     fun color(a: Airspace, relevance: Relevance): Int = when {
         relevance != Relevance.ALERT -> GREY
         a.cls in PROHIBITED || a.type in PROHIBITED -> RED
@@ -113,7 +124,7 @@ class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
         this.canvas = canvas
         proj = p
         // Slightly larger than half a cell so neighbouring cells merge into a smooth patch.
-        radius = max(minR, (t.cellM * 0.75 / p.metresPerPixel).toFloat())
+        radius = max(minR, (t.cellM * 0.9 / p.metresPerPixel).toFloat())
         t.forEach(p.minLat, p.minLon, p.maxLat, p.maxLon, now, this)
         this.canvas = null
     }
@@ -152,6 +163,8 @@ class AircraftOverlay(context: Context) : MapView.Overlay {
     private val glider = Path()
     private val size = context.dp(13f)
     private val coreR = context.dp(14f)
+    private val cross = context.dp(6f)
+    private val crossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Theme.TEXT; strokeWidth = context.dp(2.5f); strokeCap = Paint.Cap.ROUND }
     private var pts = FloatArray(0)
 
     override fun draw(canvas: Canvas, p: MapView.Projection) {
@@ -174,7 +187,15 @@ class AircraftOverlay(context: Context) : MapView.Overlay {
         }
 
         val x = p.x(f.lon); val y = p.y(f.lat)
-        if (!f.track.isNaN() && f.speed > 2) {
+        val impact = if (Hub.settings.showGlide) c.glideImpact else null
+        if (impact != null) {
+            // Glide line: dashed to an × where the present glide meets the ground.
+            val ix = p.x(impact.lon); val iy = p.y(impact.lat)
+            canvas.drawLine(x, y, ix, iy, aheadPaint)
+            canvas.drawLine(ix - cross, iy - cross, ix + cross, iy + cross, crossPaint)
+            canvas.drawLine(ix - cross, iy + cross, ix + cross, iy - cross, crossPaint)
+        } else if (!f.track.isNaN() && f.speed > 2) {
+            // No glide line (climbing, or switched off): show where we will be in a minute.
             val ahead = Geo.destination(f.lat, f.lon, f.track, f.speed * Hub.settings.lookaheadS)
             canvas.drawLine(x, y, p.x(ahead.lon), p.y(ahead.lat), aheadPaint)
         }

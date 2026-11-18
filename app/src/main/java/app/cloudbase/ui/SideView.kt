@@ -10,6 +10,7 @@ import android.view.View
 import app.cloudbase.Hub
 import app.cloudbase.core.Geo
 import app.cloudbase.core.airspace.Airspace
+import app.cloudbase.core.airspace.AlertLevel
 import app.cloudbase.core.airspace.AltLimit
 import app.cloudbase.core.airspace.AltRef
 import app.cloudbase.core.airspace.Relevance
@@ -45,7 +46,8 @@ class SideView(context: Context) : View(context) {
     private val path = Path()
 
     /** Distance shown ahead of the glider, metres. Tap cycles through [RANGES]. */
-    private var rangeM = RANGES[0]
+    private var rangeIndex = 0
+    private val rangeM get() = RANGES[rangeIndex]
     private var bearing = 0.0
     private val terrain = DoubleArray(SAMPLES) { Double.NaN }
     private var slabs: List<Slab> = emptyList()
@@ -56,6 +58,7 @@ class SideView(context: Context) : View(context) {
     private var climb = 0.0
     private var bottom = 0.0
     private var top = 1000.0
+    private var step = 250.0
     private var headline = ""
     private var headlineColor = Theme.TEXT
     private var hasData = false
@@ -63,7 +66,7 @@ class SideView(context: Context) : View(context) {
     init {
         setBackgroundColor(Theme.BG)
         setOnClickListener {
-            rangeM = RANGES[(RANGES.indexOf(rangeM) + 1) % RANGES.size]
+            rangeIndex = (rangeIndex + 1) % RANGES.size
             refresh()
         }
     }
@@ -87,7 +90,7 @@ class SideView(context: Context) : View(context) {
         var lo = altMsl
         for (i in 0 until SAMPLES) {
             val p = Geo.destination(start.lat, start.lon, bearing, spanM * i / (SAMPLES - 1))
-            val e = Hub.elevation.at(p.lat, p.lon)
+            val e = Hub.terrainAt(p.lat, p.lon)
             terrain[i] = e
             if (!e.isNaN()) lo = min(lo, e)
         }
@@ -102,16 +105,22 @@ class SideView(context: Context) : View(context) {
         // overhead. Snapped to whole steps so it does not breathe with every fix.
         var hi = altMsl + 400
         c.headroom?.let { hi = max(hi, altMsl + it.second + 250) }
-        bottom = floor((lo - 60) / STEP) * STEP
-        top = ceil(hi / STEP) * STEP
+        // Coarser grid lines when the window is tall, so there are never more than about six.
+        step = when { hi - lo > 3000 -> 1000.0; hi - lo > 1300 -> 500.0; else -> 250.0 }
+        bottom = floor((lo - 60) / step) * step
+        top = ceil(hi / step) * step
 
         val u = Units(Hub.settings)
         val h = c.headroom
-        if (h == null) {
+        val inside = c.statuses.firstOrNull { it.level == AlertLevel.INSIDE }
+        if (inside != null) {
+            headline = "Inside ${AirspaceStyle.title(inside.airspace)}"
+            headlineColor = Theme.DANGER
+        } else if (h == null) {
             headline = "No airspace above"
             headlineColor = Theme.MUTED
         } else {
-            headline = "${u.altWithUnit(h.second)} below ${h.first.kind} ${h.first.name} (${h.first.lower.text})"
+            headline = "${u.altWithUnit(h.second)} below ${AirspaceStyle.title(h.first)} (${h.first.lower.text})"
             headlineColor = when {
                 h.second < Hub.settings.verticalMarginM -> Theme.DANGER
                 h.second < 3 * Hub.settings.verticalMarginM -> Theme.WARN
@@ -145,12 +154,12 @@ class SideView(context: Context) : View(context) {
         val u = Units(Hub.settings)
 
         // Altitude grid.
-        var a = bottom + STEP
+        var a = bottom + step
         while (a < top) {
             val y = yOf(a)
             canvas.drawLine(padL, y, width.toFloat(), y, gridPaint)
             canvas.drawText(u.alt(a), context.dp(4f), y + textPaint.textSize * 0.35f, textPaint)
-            a += STEP
+            a += step
         }
 
         // Airspace blocks. A limit above ground follows the terrain; the others are level.
@@ -182,7 +191,7 @@ class SideView(context: Context) : View(context) {
             if (x1 - x0 > context.dp(40f) && relevance[i] == Relevance.ALERT) {
                 namePaint.color = col
                 val ty = (floorY - context.dp(4f)).coerceIn(padT + namePaint.textSize, height - padB - context.dp(2f))
-                canvas.drawText("${sp.kind} ${sp.lower.text}", max(x0, padL) + context.dp(4f), ty, namePaint)
+                canvas.drawText("${AirspaceStyle.short(sp)} ${sp.lower.text}", max(x0, padL) + context.dp(4f), ty, namePaint)
             }
             canvas.restore()
         }
@@ -209,10 +218,14 @@ class SideView(context: Context) : View(context) {
         }
         canvas.drawCircle(gx, gy, context.dp(5f), gliderPaint)
 
-        headPaint.color = headlineColor
-        canvas.drawText(headline, padL, context.dp(15f), headPaint)
         val range = if (rangeM >= 1000) "${(rangeM / 1000).toInt()} km ahead" else "${rangeM.toInt()} m ahead"
-        canvas.drawText(range, width - textPaint.measureText(range) - context.dp(8f), context.dp(15f), textPaint)
+        val rangeX = width - textPaint.measureText(range) - context.dp(8f)
+        canvas.drawText(range, rangeX, context.dp(15f), textPaint)
+        headPaint.color = headlineColor
+        // Cut the headline rather than run it into the range label.
+        val fits = headPaint.breakText(headline, true, rangeX - padL - context.dp(8f), null)
+        val shown = if (fits < headline.length) headline.substring(0, max(0, fits - 1)) + "…" else headline
+        canvas.drawText(shown, padL, context.dp(15f), headPaint)
     }
 
     companion object {
@@ -220,6 +233,5 @@ class SideView(context: Context) : View(context) {
         /** Fraction of the range also shown behind the glider. */
         const val BEHIND = 0.12
         const val SAMPLES = 64
-        const val STEP = 250.0
     }
 }

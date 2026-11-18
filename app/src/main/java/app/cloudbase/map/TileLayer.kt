@@ -28,7 +28,10 @@ class TileLayer(
     // queue, inFlight and the lock-guarded writes of [stopped] are protected by [lock].
     private val lock = ReentrantLock()
     private val notEmpty = lock.newCondition()
-    private val queue = LinkedHashSet<Long>() // wanted, not yet started; oldest first
+    private val queue = LinkedHashSet<Long>() // wanted and needing the network; oldest first
+    // Wanted and already on disk. Served first: with no signal, every network attempt can sit in
+    // a timeout, and the tiles we do have must not wait behind them.
+    private val diskQueue = LinkedHashSet<Long>()
     private val inFlight = HashSet<Long>()    // being loaded right now
     @Volatile private var stopped = false
 
@@ -51,14 +54,15 @@ class TileLayer(
      * Marks the start of a draw pass: tiles still queued from the previous pass are dropped, because
      * the pass about to run re-requests every tile that is still visible.
      */
-    fun beginFrame() = lock.withLock { queue.clear() }
+    fun beginFrame() = lock.withLock { queue.clear(); diskQueue.clear() }
 
     /** Returns the tile if in memory, else null and schedules a load. [x] must already be wrapped. */
     fun get(z: Int, x: Int, y: Int): Bitmap? {
         val key = pack(z, x, y)
         cache.get(key)?.let { return it }
+        val onDisk = store.has(source, z, x, y)
         lock.withLock {
-            if (!stopped && key !in inFlight && queue.add(key)) notEmpty.signal()
+            if (!stopped && key !in inFlight && (if (onDisk) diskQueue else queue).add(key)) notEmpty.signal()
         }
         return null
     }
@@ -70,6 +74,7 @@ class TileLayer(
         lock.withLock {
             stopped = true
             queue.clear()
+            diskQueue.clear()
             notEmpty.signalAll()
         }
         main.removeCallbacks(deliver)
@@ -80,10 +85,11 @@ class TileLayer(
     private fun workLoop() {
         while (true) {
             val key = lock.withLock {
-                while (queue.isEmpty() && !stopped) notEmpty.awaitUninterruptibly()
+                while (queue.isEmpty() && diskQueue.isEmpty() && !stopped) notEmpty.awaitUninterruptibly()
                 if (stopped) return
-                val k = queue.first()
-                queue.remove(k)
+                val from = if (diskQueue.isEmpty()) queue else diskQueue
+                val k = from.first()
+                from.remove(k)
                 inFlight.add(k)
                 k
             }
