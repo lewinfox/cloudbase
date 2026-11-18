@@ -70,31 +70,35 @@ class HeatGrid(val n: Int) {
         const val ALPHA = 225
 
         /**
-         * One continuous scale from sink to climb: the "plasma" colour map, deep indigo through
-         * purple, magenta and orange to bright yellow. Chosen because (1) it gets steadily
-         * brighter from one end to the other, so stronger climb is always lighter and the order
-         * survives glare and colour-blindness, where a rainbow's does not; and (2) unlike viridis
-         * it has no green or grey-blue in it, which are the colours of the map underneath.
+         * Two colour families, so whether the air is going up or down is the first thing you see,
+         * and brightness that rises all the way from strong sink to strong climb, so the order
+         * survives glare and colour-blindness:
+         *
+         *   strong sink  near-black indigo > indigo > violet   |gap|   red-orange > amber > yellow > pale yellow  strong climb
+         *
+         * Neither family has green or grey-blue in it, which are the colours of the map underneath.
+         * Each ramp is listed weakest to strongest.
          */
-        private val PLASMA = intArrayOf(0x0D0887, 0x5402A3, 0x8B0AA5, 0xB93289, 0xDB5C68, 0xF48849, 0xFEBC2A, 0xF0F921)
+        private val SINK = intArrayOf(0x9A35E8, 0x6A1FD0, 0x3F14A8, 0x1E0B6B, 0x0B0433)
+        private val LIFT = intArrayOf(0xFF4E1A, 0xFF8A00, 0xFFC400, 0xFFE83B, 0xFFF9B8)
 
         /**
-         * Where a climb value sits on the scale, 0..1. A sigmoid (tanh) centred on still air:
-         * most of the colour range is spent on the ordinary +-2 m/s where telling values apart
-         * matters, and extreme values flatten out towards the ends instead of all looking the
-         * same shade once past a hard limit. [scale] is the climb at which 76 % of the way from
-         * the middle to the end has been used.
+         * How far along its ramp a climb or sink value sits, 0..1. A sigmoid (tanh): most of the
+         * colour range is spent on ordinary values where telling them apart matters, and extreme
+         * values flatten out towards the end instead of all looking the same shade once past a
+         * hard limit. [scale] is the climb or sink at which 76 % of the ramp has been used.
          */
-        fun position(climb: Float, scale: Float): Float = 0.5f + 0.5f * tanh(climb / scale)
+        fun strength(climb: Float, scale: Float): Float = tanh(abs(climb) / scale)
 
         /** ARGB for a climb value. [coverage] 0..1 fades the edges of the mapped area and old samples. */
         fun color(climb: Float, scale: Float, coverage: Float): Int {
             if (abs(climb) <= DEAD_BAND || coverage <= 0f) return 0
-            val pos = position(climb, scale) * (PLASMA.size - 1)
-            val k = min(pos.toInt(), PLASMA.size - 2)
+            val ramp = if (climb > 0) LIFT else SINK
+            val pos = strength(climb, scale) * (ramp.size - 1)
+            val k = min(pos.toInt(), ramp.size - 2)
             val f = pos - k
-            val a = PLASMA[k]
-            val b = PLASMA[k + 1]
+            val a = ramp[k]
+            val b = ramp[k + 1]
             val r = mix(a shr 16 and 0xFF, b shr 16 and 0xFF, f)
             val g = mix(a shr 8 and 0xFF, b shr 8 and 0xFF, f)
             val bl = mix(a and 0xFF, b and 0xFF, f)

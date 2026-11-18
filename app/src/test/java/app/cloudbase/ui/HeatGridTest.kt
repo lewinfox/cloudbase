@@ -65,9 +65,27 @@ class HeatGridTest {
             }
             v += 0.5f
         }
-        assertEquals(0.5f, HeatGrid.position(0f, scale), 1e-6f)
-        assertEquals(0.88f, HeatGrid.position(2.0f, scale), 0.01f)
-        assertTrue(HeatGrid.position(50f, scale) <= 1f && HeatGrid.position(-50f, scale) >= 0f)
+        assertEquals(0f, HeatGrid.strength(0f, scale), 1e-6f)
+        assertEquals(0.76f, HeatGrid.strength(2.0f, scale), 0.01f)
+        assertEquals(HeatGrid.strength(1.3f, scale), HeatGrid.strength(-1.3f, scale), 1e-6f)
+        assertTrue(HeatGrid.strength(50f, scale) <= 1f)
+    }
+
+    @Test fun upAndDownAreUnmistakablyDifferentEvenWhenWeak() {
+        // The first thing to read is the sign. Just either side of still air the two colours
+        // must be far apart, and each side must stay in its own family at every strength.
+        val weakLift = HeatGrid.color(0.4f, scale, 1f)
+        val weakSink = HeatGrid.color(-0.4f, scale, 1f)
+        assertTrue("weak lift and weak sink differ by ${distance(weakLift, weakSink)}", distance(weakLift, weakSink) > 200)
+        var v = 0.25f
+        while (v <= 6f) {
+            val up = HeatGrid.color(v, scale, 1f)
+            val down = HeatGrid.color(-v, scale, 1f)
+            // Lift is the orange/yellow family (red well above blue); sink the violet/indigo family (blue above red).
+            assertTrue("lift at $v: %06X".format(rgb(up)), (up shr 16 and 0xFF) > (up and 0xFF) + 60)
+            assertTrue("sink at $v: %06X".format(rgb(down)), (down and 0xFF) > (down shr 16 and 0xFF) + 20)
+            v += 0.25f
+        }
     }
 
     @Test fun stillAirIsNotDrawnAndOpacityIsCoverageOnly() {
