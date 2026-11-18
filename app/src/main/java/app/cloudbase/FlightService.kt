@@ -276,6 +276,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         val flying = Hub.computer.flightState == FlightState.FLYING
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
+            .setColor(0xFF1E7FE0.toInt())
             .setContentTitle(if (flying) "Flight in progress" else "Ready for takeoff")
             .setContentText(if (flying && Hub.computer.recording) "Recording IGC log" else "Log starts automatically at takeoff")
             .setContentIntent(open)

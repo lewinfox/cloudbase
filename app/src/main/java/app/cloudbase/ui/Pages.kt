@@ -2,6 +2,7 @@ package app.cloudbase.ui
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -27,16 +28,18 @@ abstract class Page(protected val act: MainActivity, private val title: String) 
         orientation = LinearLayout.VERTICAL
         setBackgroundColor(Theme.BG)
         isClickable = true // swallow touches so the map underneath does not pan
+        // Header: the logo's sky, with its cloud.
         addView(Theme.row(act).apply {
-            setPadding(act.dp(8), 0, act.dp(20), 0)
+            background = Brand.sky()
+            setPadding(act.dp(6), 0, act.dp(18), 0)
             addView(TextView(act).apply {
-                text = "‹"; textSize = 30f; setTextColor(Theme.ACCENT); gravity = Gravity.CENTER
-                background = Theme.ripple(null)
+                text = "‹"; textSize = 30f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                background = Theme.ripple(null, Color.argb(60, 255, 255, 255))
                 setOnClickListener { act.closePage() }
             }, LinearLayout.LayoutParams(act.dp(48), act.dp(56)))
-            addView(Theme.body(act, title, Theme.TEXT, 20f).apply { typeface = Theme.CONDENSED_BOLD })
+            addView(Theme.body(act, title, Color.WHITE, 21f).apply { typeface = Theme.CONDENSED_BOLD; letterSpacing = 0.04f }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Brand.cloud(act), LinearLayout.LayoutParams(act.dp(36), act.dp(24)))
         })
-        addView(Theme.rule(act))
         addView(ScrollView(act).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
@@ -65,8 +68,17 @@ abstract class Page(protected val act: MainActivity, private val title: String) 
         list.addView(Theme.rule(act))
     }
 
-    protected fun toggle(name: String, value: Boolean, set: (Boolean) -> Unit) =
-        row(name, if (value) "On" else "Off") { set(!value); Hub.applySettings(); rebuild() }
+    protected fun toggle(name: String, value: Boolean, set: (Boolean) -> Unit) {
+        list.addView(Theme.row(act).apply {
+            minimumHeight = act.dp(52)
+            addView(Theme.body(act, name), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(SwitchView(act, value))
+            contentDescription = "$name, ${if (value) "on" else "off"}"
+            background = Theme.ripple(null)
+            setOnClickListener { set(!value); Hub.applySettings(); rebuild() }
+        })
+        list.addView(Theme.rule(act))
+    }
 
     protected fun button(text: String, primary: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
         list.addView(Theme.button(act, text, primary, danger, onClick), LinearLayout.LayoutParams(-1, -2).apply { topMargin = act.dp(12) })
@@ -137,8 +149,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
         row("Glider ID", s.gliderId.ifEmpty { "Not set" }) { text("Glider ID or registration", s.gliderId) { s.gliderId = it } }
 
         section("Try it out")
-        row("Demo flight", if (s.demo) "On" else "Off") {
-            s.demo = !s.demo
+        toggle("Demo flight", s.demo) {
+            s.demo = it
             // The service reads this at start, so restart it on the other data source.
             FlightService.stop(act)
             act.restartService()

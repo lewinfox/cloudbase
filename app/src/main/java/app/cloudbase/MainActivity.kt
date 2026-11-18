@@ -30,8 +30,11 @@ import app.cloudbase.map.TileSource
 import app.cloudbase.ui.AircraftOverlay
 import app.cloudbase.ui.AirspaceOverlay
 import app.cloudbase.ui.AirspaceStyle
+import app.cloudbase.ui.Brand
 import app.cloudbase.ui.AirspacePage
 import app.cloudbase.ui.FlightsPage
+import app.cloudbase.ui.GlyphButton
+import app.cloudbase.ui.MenuSheet
 import app.cloudbase.ui.InstrumentBar
 import app.cloudbase.ui.OfflinePage
 import app.cloudbase.ui.Page
@@ -55,7 +58,8 @@ class MainActivity : Activity() {
     private lateinit var side: SideView
     private lateinit var banner: TextView
     private lateinit var chip: TextView
-    private lateinit var recenter: TextView
+    private lateinit var recenter: View
+    private var menu: View? = null
     private lateinit var root: FrameLayout
     private val airspaceOverlay by lazy { AirspaceOverlay(this) }
     private val bannerShape = GradientDrawable()
@@ -97,7 +101,7 @@ class MainActivity : Activity() {
             overlays.add(airspaceOverlay)
             overlays.add(AircraftOverlay(context))
             onFollowChanged = { following -> recenter.visibility = if (following) View.GONE else View.VISIBLE }
-            onTap = { lat, lon -> showAirspaceAt(lat, lon) }
+            onLongPress = { lat, lon -> showAirspaceAt(lat, lon) }
         }
         Hub.elevation.onTileLoaded = { lastVersion = -1 }
         Hub.airspace.onChanged = { airspaceChanged(); page?.rebuild() }
@@ -113,28 +117,34 @@ class MainActivity : Activity() {
         bannerShape.cornerRadius = dp(8f)
         chip = Theme.body(this, "", Theme.TEXT, 12.5f).apply {
             typeface = Theme.CONDENSED_BOLD
-            background = GradientDrawable().apply { cornerRadius = dp(14f); setColor(Color.argb(235, 255, 255, 255)); setStroke(1, Theme.LINE) }
+            background = GradientDrawable().apply { cornerRadius = dp(15f); setColor(Color.WHITE) }
+            elevation = dp(3f)
             setPadding(dp(12), dp(6), dp(12), dp(6))
         }
-        recenter = mapButton("◎") { map.follow = true; Hub.computer.fix?.let { map.setCenter(it.lat, it.lon) } }.apply { visibility = View.GONE }
+        recenter = GlyphButton(this, GlyphButton.Glyph.RECENTRE) { map.follow = true; Hub.computer.fix?.let { map.setCenter(it.lat, it.lon) } }.apply { visibility = View.GONE }
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(mapButton("≡") { showMenu() }, buttonLp())
-            addView(mapButton("+") { map.zoom = map.zoom + 1 }, buttonLp())
-            addView(mapButton("−") { map.zoom = map.zoom - 1 }, buttonLp())
+            // Room for the buttons' shadows, which a tight parent would clip.
+            clipToPadding = false
+            setPadding(dp(6), dp(4), dp(4), dp(6))
+            addView(GlyphButton(context, GlyphButton.Glyph.MENU) { showMenu() }, buttonLp())
+            addView(GlyphButton(context, GlyphButton.Glyph.PLUS) { map.zoom = map.zoom + 1 }, buttonLp())
+            addView(GlyphButton(context, GlyphButton.Glyph.MINUS) { map.zoom = map.zoom - 1 }, buttonLp())
             addView(recenter, buttonLp())
         }
         val mapFrame = FrameLayout(this).apply {
             addView(map, FrameLayout.LayoutParams(-1, -1))
             addView(banner, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(dp(10), dp(10), dp(62), 0) })
-            addView(buttons, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(10), dp(10), 0) })
+            addView(buttons, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
             addView(chip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
         }
         root = FrameLayout(this).apply {
             fitsSystemWindows = true
-            setBackgroundColor(Theme.BG)
+            // The status bar sits on the same sky blue as the headers.
+            setBackgroundColor(Brand.SKY_BOTTOM)
             addView(LinearLayout(context).apply {
+                setBackgroundColor(Theme.BG)
                 orientation = LinearLayout.VERTICAL
                 addView(instruments, LinearLayout.LayoutParams(-1, -2))
                 addView(mapFrame, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -173,7 +183,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (page != null) closePage() else @Suppress("DEPRECATION") super.onBackPressed()
+        if (menu != null) closeMenu() else if (page != null) closePage() else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     // --- per-fix refresh ---------------------------------------------------------------------
@@ -231,16 +241,21 @@ class MainActivity : Activity() {
     // --- menu and pages ------------------------------------------------------------------------
 
     private fun showMenu() {
-        val items = arrayOf("Flights", "Airspace", "Offline maps", "Settings", "Stop and exit")
-        AlertDialog.Builder(this).setItems(items) { _, i ->
-            when (i) {
-                0 -> open(FlightsPage(this))
-                1 -> open(AirspacePage(this))
-                2 -> open(OfflinePage(this))
-                3 -> open(SettingsPage(this))
-                4 -> confirmExit()
-            }
-        }.show()
+        closeMenu()
+        val sheet = MenuSheet(this, listOf(
+            "Flights" to { open(FlightsPage(this)) },
+            "Airspace" to { open(AirspacePage(this)) },
+            "Offline maps" to { open(OfflinePage(this)) },
+            "Settings" to { open(SettingsPage(this)) },
+            "Stop and exit" to { confirmExit() },
+        )) { closeMenu() }
+        menu = sheet
+        root.addView(sheet, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private fun closeMenu() {
+        menu?.let { root.removeView(it) }
+        menu = null
     }
 
     private fun confirmExit() {
@@ -355,15 +370,6 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
-    }
-
-    private fun mapButton(text: String, onClick: () -> Unit) = TextView(this).apply {
-        this.text = text
-        textSize = 22f
-        gravity = Gravity.CENTER
-        setTextColor(Theme.TEXT)
-        background = Theme.ripple(GradientDrawable().apply { cornerRadius = dp(8f); setColor(Color.argb(240, 255, 255, 255)); setStroke(1, Theme.LINE) })
-        setOnClickListener { onClick() }
     }
 
     private fun buttonLp() = LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) }

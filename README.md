@@ -37,8 +37,9 @@ vertical speed of the air itself), wind speed and direction with an arrow showin
 is carrying you on the map.
 
 **Map.** North-up topographic map. Airspace you must stay out of is outlined blue (controlled)
-or red (restricted, danger, military); informational airspace is thin grey. Tap an airspace for
-its limits, or to ignore it. The coloured cloud is the **thermal map**: warm where the air was
+or red (restricted, danger, military); informational airspace is thin grey. Press and hold on an
+airspace for its limits, or to ignore it. **Tap the map once to zoom in, twice to zoom out**
+(made for gloves; the + and − buttons and pinch work too). The coloured cloud is the **thermal map**: warm where the air was
 rising (amber for weak lift through to deep red for strong), cool where it was sinking (pale to
 deep blue), drifting downwind with the air; the red ring marks the best lift nearby. That drift only lasts
 five minutes, long enough to centre the climb you are in. After that a patch is shown, faded,

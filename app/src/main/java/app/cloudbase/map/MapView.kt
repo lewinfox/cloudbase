@@ -92,7 +92,8 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
     /** True while the map follows the aircraft; a user pan (or a zoom that moves the centre) clears it. */
     var follow: Boolean = true
     var onFollowChanged: ((Boolean) -> Unit)? = null
-    var onTap: ((lat: Double, lon: Double) -> Unit)? = null
+    /** Press and hold. Single and double taps are taken by zooming, which has to work in gloves. */
+    var onLongPress: ((lat: Double, lon: Double) -> Unit)? = null
     val overlays: MutableList<Overlay> = ArrayList()
 
     private val density = resources.displayMetrics.density
@@ -123,14 +124,20 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
             return true
         }
 
+        // Gloved fingers cannot pinch or hit a small button, so the whole map is the zoom
+        // control: one tap in, two taps out.
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            onTap?.invoke(projection.lat(e.y), projection.lon(e.x))
+            tapZoom(zoom + 1, e)
             return true
         }
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
-            zoomAbout(zoom + 1, e.x, e.y)
+            tapZoom(zoom - 1, e)
             return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            onLongPress?.invoke(projection.lat(e.y), projection.lon(e.x))
         }
     })
 
@@ -139,7 +146,7 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
             zoomAbout(zoom + ln(d.scaleFactor.toDouble()) / LN2, d.focusX, d.focusY)
             return true
         }
-    }).apply { isQuickScaleEnabled = false } // would fight with double-tap zoom
+    }).apply { isQuickScaleEnabled = false } // would fight with double-tap
 
     init {
         projection.update(centerLat, centerLon, zoom, 0, 0)
@@ -251,6 +258,14 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
         centerLon = Mercator.lon(cx, zoom)
         centerLat = Mercator.lat(cy, zoom)
         userMoved()
+    }
+
+    /**
+     * Zoom by a tap. While following, about the centre: the glider stays put and following carries
+     * on, wherever the glove landed. Otherwise about the point tapped.
+     */
+    private fun tapZoom(newZoom: Double, e: MotionEvent) {
+        if (follow) zoom = newZoom else zoomAbout(newZoom, e.x, e.y)
     }
 
     /** Sets the zoom keeping the geographic point under ([fx], [fy]) fixed on screen. */

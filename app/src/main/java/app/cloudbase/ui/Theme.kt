@@ -17,16 +17,16 @@ import app.cloudbase.Settings
 import kotlin.math.roundToInt
 
 /**
- * The whole design system: white, near-black text, one blue accent. Light because it is read in
+ * The whole design system: white, deep-navy ink, and the sky blue of the logo as the one accent. Light because it is read in
  * full sun; colour is reserved for things that mean something (lift, sink, airspace, alerts).
  */
 object Theme {
     val BG = Color.WHITE
-    val SURFACE = Color.parseColor("#F4F5F7")
-    val LINE = Color.parseColor("#E1E4E8")
-    val MUTED = Color.parseColor("#6B7280")
-    val TEXT = Color.parseColor("#111418")
-    val ACCENT = Color.parseColor("#1565C0")
+    val SURFACE = Color.parseColor("#F2F7FC")
+    val LINE = Color.parseColor("#DDE5EE")
+    val MUTED = Color.parseColor("#627D98")
+    val TEXT = Color.parseColor("#102A43")
+    val ACCENT = Color.parseColor("#1E7FE0")
     val LIFT = Color.parseColor("#D32F2F")
     val SINK = Color.parseColor("#1976D2")
     val WARN = Color.parseColor("#E08A00")
@@ -67,9 +67,10 @@ object Theme {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             val edge = if (danger) DANGER else ACCENT
             setTextColor(if (primary) Color.WHITE else edge)
-            val shape = GradientDrawable().apply {
-                cornerRadius = ctx.dp(8f)
-                if (primary) setColor(edge) else { setColor(Color.WHITE); setStroke(ctx.dp(1), edge) }
+            // Pill-shaped; the main action on a page wears the logo's sky.
+            val shape = if (primary && !danger) Brand.sky(ctx.dp(24f)) else GradientDrawable().apply {
+                cornerRadius = ctx.dp(24f)
+                if (primary) setColor(edge) else { setColor(Color.WHITE); setStroke(ctx.dp(1.5f).toInt(), edge) }
             }
             background = ripple(shape)
             minHeight = ctx.dp(48)
@@ -79,7 +80,7 @@ object Theme {
             setOnClickListener { onClick() }
         }
 
-    fun ripple(content: Drawable?, color: Int = Color.argb(40, 21, 101, 192)): Drawable =
+    fun ripple(content: Drawable?, color: Int = Color.argb(40, 30, 127, 224)): Drawable =
         RippleDrawable(ColorStateList.valueOf(color), content, content ?: ColorDrawable(Color.WHITE))
 
     fun rule(ctx: Context) = View(ctx).apply {

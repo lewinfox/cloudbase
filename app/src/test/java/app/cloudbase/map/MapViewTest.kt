@@ -143,17 +143,59 @@ class MapViewTest {
         assertTrue(view.centerLon > 7.0)
     }
 
-    @Test fun tapReportsGeographicPosition() {
-        var tapped: Pair<Double, Double>? = null
-        view.onTap = { lat, lon -> tapped = lat to lon }
+    private fun tap(t: Long, x: Float = 100f, y: Float = 200f) {
+        view.dispatchTouchEvent(event(t, MotionEvent.ACTION_DOWN, x, y))
+        view.dispatchTouchEvent(event(t + 20, MotionEvent.ACTION_UP, x, y))
+    }
+
+    private fun settleTaps() = org.robolectric.shadows.ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS)
+
+    @Test fun singleTapZoomsInAndKeepsFollowing() {
+        val before = view.zoom
+        val lat = view.centerLat
+        val lon = view.centerLon
+        // Well away from the centre: in gloves you hit wherever you hit.
+        tap(SystemClock.uptimeMillis())
+        // Single taps are confirmed after the double-tap timeout, via the main looper.
+        settleTaps()
+        assertEquals(before + 1, view.zoom, 1e-9)
+        assertTrue(view.follow)
+        assertEquals(lat, view.centerLat, 1e-9)
+        assertEquals(lon, view.centerLon, 1e-9)
+    }
+
+    @Test fun doubleTapZoomsOutOnceAndDoesNotAlsoZoomIn() {
+        val before = view.zoom
+        val t = SystemClock.uptimeMillis()
+        tap(t)
+        tap(t + 120)
+        settleTaps()
+        assertEquals(before - 1, view.zoom, 1e-9)
+        assertTrue(view.follow)
+    }
+
+    @Test fun tapZoomsAboutTheFingerWhenNotFollowing() {
+        view.follow = false
+        val under = view.projection.lat(200f) to view.projection.lon(100f)
+        tap(SystemClock.uptimeMillis())
+        settleTaps()
+        // The place that was under the finger is still under it.
+        assertEquals(under.first, view.projection.lat(200f), 1e-6)
+        assertEquals(under.second, view.projection.lon(100f), 1e-6)
+    }
+
+    @Test fun longPressReportsGeographicPositionWithoutZooming() {
+        var pressed: Pair<Double, Double>? = null
+        view.onLongPress = { lat, lon -> pressed = lat to lon }
+        val before = view.zoom
         val t = SystemClock.uptimeMillis()
         view.dispatchTouchEvent(event(t, MotionEvent.ACTION_DOWN, 360f, 640f))
-        view.dispatchTouchEvent(event(t + 20, MotionEvent.ACTION_UP, 360f, 640f))
-        // Single taps are confirmed after the double-tap timeout, via the main looper.
-        org.robolectric.shadows.ShadowLooper.idleMainLooper(1, java.util.concurrent.TimeUnit.SECONDS)
-        assertEquals(46.0, tapped!!.first, 1e-6)
-        assertEquals(7.0, tapped!!.second, 1e-6)
-        assertTrue(view.follow)
+        settleTaps()
+        view.dispatchTouchEvent(event(t + 1000, MotionEvent.ACTION_UP, 360f, 640f))
+        settleTaps()
+        assertEquals(46.0, pressed!!.first, 1e-6)
+        assertEquals(7.0, pressed!!.second, 1e-6)
+        assertEquals(before, view.zoom, 1e-9)
     }
 
     private fun event(t: Long, action: Int, x: Float, y: Float) = MotionEvent.obtain(t, t, action, x, y, 0)

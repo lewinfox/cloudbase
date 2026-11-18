@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown for the moment before the first frame: the logo on its sky, instead of a blank white window. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" android:gravity="center" android:width="240dp" android:height="240dp" />
+</layer-list>

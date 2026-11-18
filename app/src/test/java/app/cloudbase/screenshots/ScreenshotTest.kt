@@ -12,6 +12,7 @@ import app.cloudbase.Hub
 import app.cloudbase.MainActivity
 import app.cloudbase.core.Geo
 import app.cloudbase.core.flight.FlightSim
+import app.cloudbase.ui.GlyphButton
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -107,12 +108,10 @@ class ScreenshotTest {
         flyTo(1e9) // land, so the logbook has a finished flight in it
 
         for ((label, name) in listOf("Flights" to "5-flights", "Airspace" to "6-airspace", "Settings" to "7-settings")) {
-            find(act.window.decorView) { it is TextView && it.text.toString() == "≡" }!!.performClick()
+            find(act.window.decorView) { it is GlyphButton && it.contentDescription == "Menu" }!!.performClick()
             idle()
-            val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-            val list = dialog.listView
-            val index = (0 until list.adapter.count).first { list.adapter.getItem(it).toString() == label }
-            shadowOf(list).performItemClick(index)
+            if (label == "Flights") snap(act, "8-menu")
+            find(act.window.decorView) { it is TextView && it.text.toString() == label && it.hasOnClickListeners() }!!.performClick()
             idle()
             snap(act, name)
             act.closePage()

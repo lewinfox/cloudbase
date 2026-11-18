@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Framework Material light theme: no AppCompat. Light because it has to be read in full sun. -->
     <style name="Theme.Cloudbase" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorAccent">#1565C0</item>
-        <item name="android:windowBackground">#FFFFFF</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:colorAccent">#1E7FE0</item>
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="android:statusBarColor">#2F8FE6</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="27" xmlns:tools="http://schemas.android.com/tools">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
+        <item name="android:textColorPrimary">#102A43</item>
+        <item name="android:alertDialogTheme">@style/Theme.Cloudbase.Dialog</item>
+    </style>
+
+    <style name="Theme.Cloudbase.Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#1E7FE0</item>
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:textColorPrimary">#102A43</item>
     </style>
 </resources>
