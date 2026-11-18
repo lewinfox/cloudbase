@@ -8,6 +8,7 @@ import app.cloudbase.core.airspace.AirspacePolicy
 import app.cloudbase.core.airspace.MonitorConfig
 import app.cloudbase.core.igc.IgcHeader
 import app.cloudbase.map.Elevation
+import app.cloudbase.map.RegionDownloader
 import app.cloudbase.map.TileStore
 import java.io.File
 
@@ -24,6 +25,8 @@ object Hub {
     lateinit var computer: FlightComputer; private set
     lateinit var airspace: AirspaceRepo; private set
     lateinit var logs: FlightLogs; private set
+    /** One for the whole app, so a download keeps its cancel button when the page is reopened. */
+    lateinit var downloader: RegionDownloader; private set
 
     /** One line for the status chip, e.g. "Waiting for GPS". Empty when all is well. */
     var gpsStatus = "Waiting for GPS"
@@ -37,6 +40,7 @@ object Hub {
         settings = Settings(app)
         tiles = TileStore(File(app.filesDir, "tiles"), "Cloudbase/${version()} (Android paragliding instrument)")
         elevation = Elevation(tiles)
+        downloader = RegionDownloader(tiles)
         computer = FlightComputer { lat, lon -> terrainAt(lat, lon) }
         logs = FlightLogs(File(app.getExternalFilesDir(null) ?: app.filesDir, "flights"))
         computer.logSink = logs

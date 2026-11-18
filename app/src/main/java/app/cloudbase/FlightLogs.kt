@@ -33,5 +33,16 @@ class FlightLogs(val dir: File) : FlightLogSink {
     /** Newest first. */
     fun list(): List<File> = dir.listFiles { f -> f.name.endsWith(".igc", ignoreCase = true) }?.sortedByDescending { it.name } ?: emptyList()
 
-    fun summary(f: File): IgcSummary? = try { f.bufferedReader().use { IgcSummary.read(it) } } catch (e: Exception) { null }
+    // Summaries by path and size: a finished log never changes, so each is read once per run.
+    private val summaries = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<IgcSummary>>()
+    private fun key(f: File) = "${f.path}:${f.length()}"
+
+    fun isRead(f: File) = summaries.containsKey(key(f))
+    fun cached(f: File): IgcSummary? = summaries[key(f)]?.orElse(null)
+
+    /** Reads and caches a log's summary. Slow for long flights: call off the main thread. */
+    fun read(f: File) {
+        val s = try { f.bufferedReader().use { IgcSummary.read(it) } } catch (e: Exception) { null }
+        summaries[key(f)] = java.util.Optional.ofNullable(s)
+    }
 }

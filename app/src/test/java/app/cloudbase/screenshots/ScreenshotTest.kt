@@ -58,9 +58,13 @@ class ScreenshotTest {
     }
 
     private fun snap(act: MainActivity, name: String) {
-        settle(5000)
+        settle(1000)
         val root = act.window.decorView
         val bmp = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        // Robolectric has no frame loop: the first draw is what asks for the map tiles, so draw,
+        // wait for them, and draw again.
+        root.draw(Canvas(bmp))
+        settle(6000)
         root.draw(Canvas(bmp))
         File(outDir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
@@ -95,7 +99,7 @@ class ScreenshotTest {
 
         flyTo(150.0)
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        settle(6000)
+        settle(2000)
         snap(act, "1-thermalling")
         flyTo(262.0); snap(act, "2-airspace-warning")
         flyTo(340.0); snap(act, "3-inside-airspace")

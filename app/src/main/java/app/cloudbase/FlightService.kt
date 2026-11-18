@@ -69,6 +69,12 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         if (!startForegroundCompat()) { stopSelf(); return START_NOT_STICKY }
         if (!Hub.serviceRunning) {
             Hub.serviceRunning = true
+            // A fresh start: the demo and the real clock do not agree, and a stale flight state
+            // would never see a new takeoff.
+            Hub.computer.reset()
+            Hub.applySettings()
+            groundSince = SystemClock.elapsedRealtime()
+            alerter.prepare(Hub.settings.alertVoice)
             if (Hub.settings.demo) startDemo() else startSensors()
             handler.postDelayed(watchdog, WATCHDOG_MS)
         }
@@ -253,6 +259,11 @@ class FlightService : Service(), LocationListener, SensorEventListener {
             else startForeground(NOTIFICATION_ID, notification())
             return true
         } catch (e: RuntimeException) {
+            // Say so: a silently missing instrument is worse than a notification.
+            nm.notify(NOTIFICATION_ID + 1, Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat)
+                .setContentTitle("Cloudbase is not running").setContentText("Open the app to resume GPS and logging")
+                .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+                .setAutoCancel(true).build())
             // Location permission revoked, or the system restarted us in the background where a
             // location service may not be started. The activity starts us again when it opens.
             return false
@@ -281,8 +292,11 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         const val NMEA_FRESH_MS = 10 * 60_000L
         const val GPS_LOST_MS = 5_000L
         const val WATCHDOG_MS = 2_000L
-        /** On the ground with the app closed for this long: stop using the GPS. */
-        const val IDLE_STOP_MS = 15 * 60_000L
+        /**
+         * On the ground with the screen off or the app closed for this long: stop using the GPS.
+         * Long enough to cover waiting on launch with the phone locked.
+         */
+        const val IDLE_STOP_MS = 60 * 60_000L
         const val MAX_FLIGHT_MS = 12 * 3_600_000L
         const val DEMO_TICK_MS = 50L
         const val DEMO_SPEED = 4.0

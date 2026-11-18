@@ -115,12 +115,14 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
 
     private var writer: IgcWriter? = null
     private var unflushed = 0
+    private var openRetryIn = 0
     private val pre = PreBuffer(120)
 
     fun setAirspace(index: AirspaceIndex?, policy: AirspacePolicy = AirspacePolicy(), config: MonitorConfig = MonitorConfig()) {
         this.index = index
         monitor = AirspaceMonitor(policy, config)
-        alerts.reset()
+        // The alert tracker is deliberately kept: this is called for every settings change, and an
+        // airspace already announced must not be announced again because a unit was switched.
         indexLat = Double.NaN
         nearby = emptyList()
         statuses = emptyList()
@@ -214,6 +216,37 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         if (writer != null) { logSink?.close(); writer = null; recording = false }
     }
 
+    /**
+     * Forget everything about the flight so far. Called whenever the source of data starts
+     * afresh (service start, switching to or from the demo): the new source's clock may be
+     * behind the old one's, and a flight that was in progress will simply be detected again
+     * and get a new log, rather than carrying on unrecorded.
+     */
+    fun reset() {
+        close()
+        detector.reset()
+        vario.reset()
+        vertical.reset()
+        wind.reset()
+        alerts.reset()
+        thermals.clear()
+        trail.clear()
+        fix = null
+        altMsl = Double.NaN; pressureAlt = Double.NaN; terrainElev = Double.NaN
+        airMass = Double.NaN; turnRateDegS = 0.0; circling = false
+        windEstimate = null; statuses = emptyList(); headroom = null; thermalCore = null
+        glideRatio = Double.NaN; glideImpact = null
+        hasBaro = false
+        lastAccelNs = 0L; lastPressureNs = 0L
+        accelSinceBaro = 0; accelSinceFix = 0; pressureSinceFix = 0
+        lastFixMs = 0L; lastTrack = Double.NaN
+        mslOffsetN = 0
+        avgSpeed = Double.NaN; avgClimb = Double.NaN; turningS = 0.0; straightS = 0.0
+        indexLat = Double.NaN
+        unflushed = 0; openRetryIn = 0
+        version++
+    }
+
     private fun updateAltitude(f: Fix, dtS: Double) {
         val baroNow = pressureSinceFix > 0
         val accelNow = accelSinceFix > 0
@@ -291,13 +324,20 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
     }
 
     private fun record(f: Fix, event: FlightEvent?) {
-        if (event == FlightEvent.TAKEOFF && writer == null) {
+        // Open at takeoff; if that failed (storage not ready), keep trying while airborne rather
+        // than fly the whole flight unrecorded.
+        val flying = detector.state == FlightState.FLYING
+        if (writer == null && flying && (event == FlightEvent.TAKEOFF || --openRetryIn <= 0)) {
+            openRetryIn = OPEN_RETRY_FIXES
             val start = detector.takeoffTimeMs - PRE_TAKEOFF_MS
             val first = pre.firstTimeAtOrAfter(start, f.timeMs)
             val out = logSink?.open(first)
             if (out != null) {
                 val w = IgcWriter(out)
-                w.header(igcHeader, first)
+                // Whether there is a barometer is only known once sensors have reported, so it is
+                // filled in here, not when the header details were set.
+                val h = igcHeader
+                w.header(IgcHeader(h.pilot, h.gliderType, h.gliderId, h.appVersion, h.deviceModel, hasBaro), first)
                 pre.forEachFrom(start) { t, lat, lon, pAlt, gAlt -> w.fix(t, lat, lon, pAlt, gAlt) }
                 writer = w
                 recording = true
@@ -325,6 +365,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
         const val PRE_TAKEOFF_MS = 5_000L
         /** A crash or flat battery loses at most this many seconds of log. */
         const val FLUSH_EVERY = 10
+        const val OPEN_RETRY_FIXES = 20
         const val GLIDE_TAU_S = 8.0
         /** A thermalling turn is 15-25 degrees a second; 8 is already a deliberate, held turn. */
         const val CIRCLE_RATE_DEG_S = 8.0

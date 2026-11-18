@@ -127,6 +127,46 @@ class FlightComputerTest {
         assertEquals(4, flips)
     }
 
+    @Test fun resetAllowsAnEarlierClockAndStartsANewLog() {
+        // First flight leaves the clock far ahead; after reset a second one from time zero must work.
+        val sim = FlightSim(seed = 3)
+        val c = FlightComputer { _, _ -> if (sim.trueAlt < sim.groundElevM - 30) sim.groundElevM - 600 else sim.groundElevM }
+        val sink = MemorySink()
+        c.logSink = sink
+        c.onFix(Fix(9_000_000_000_000L, sim.startLat, sim.startLon, sim.groundElevM, 0.0, Double.NaN))
+        c.forceFlying(true)
+        assertEquals(1, sink.opened)
+        c.reset()
+        assertEquals(1, sink.closed)
+        assertEquals(FlightState.GROUND, c.flightState)
+        var nb = 0.0; var nf = 0.0
+        while (!sim.finished) {
+            sim.step(0.04)
+            val t = (sim.timeS * 1e9).toLong()
+            sim.accel.let { c.onAccel(t, it[0], it[1], it[2]) }
+            if (sim.timeS >= nb) { nb += 0.05; c.onPressure(t, sim.pressureHpa) }
+            if (sim.timeS >= nf) { nf += 1.0; c.onFix(sim.fix(1_000L)) }
+        }
+        assertEquals(2, sink.opened)
+        assertEquals(2, sink.closed)
+        // The header is written at takeoff, by which time the barometer is known.
+        assertTrue(sink.text.contains("HFALPALTPRESSURE:ISA"))
+    }
+
+    @Test fun retriesOpeningTheLogWhileAirborne() {
+        var attempts = 0
+        val text = StringBuilder()
+        val flaky = object : FlightLogSink {
+            override fun open(firstFixMs: Long): Appendable? = if (++attempts < 3) null else text
+            override fun flush() {}
+            override fun close() {}
+        }
+        val r = fly(setup = { c, _ -> c.logSink = flaky })
+        assertTrue("attempts $attempts", attempts == 3)
+        assertTrue(IgcSummary.read(StringReader(text.toString()))!!.durationS > 600)
+        assertEquals(FlightState.GROUND, r.computer.flightState)
+    }
+
     @Test fun worksWithoutTerrain() {
         val r = fly(terrainKnown = false)
         assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)

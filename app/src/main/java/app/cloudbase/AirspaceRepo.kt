@@ -28,6 +28,7 @@ class AirspaceRepo(private val dir: File) {
     var onChanged: (() -> Unit)? = null
 
     private val main = Handler(Looper.getMainLooper())
+    private var loadGeneration = 0
 
     init { dir.mkdirs() }
 
@@ -51,6 +52,8 @@ class AirspaceRepo(private val dir: File) {
     /** Parse the given files (country codes or import names) off the main thread and publish the index. */
     fun load(names: Set<String>) {
         loading = true
+        // Loads can overlap (first-run download, an import, an update); only the newest may publish.
+        val generation = ++loadGeneration
         thread(name = "airspace-load", isDaemon = true) {
             val all = ArrayList<Airspace>()
             val warn = ArrayList<String>()
@@ -66,6 +69,7 @@ class AirspaceRepo(private val dir: File) {
                 }
             }
             main.post {
+                if (generation != loadGeneration) return@post
                 index = if (all.isEmpty()) null else AirspaceIndex(all)
                 warnings = warn
                 summary = if (all.isEmpty()) "No airspace loaded"
@@ -104,11 +108,13 @@ class AirspaceRepo(private val dir: File) {
 
     /** Writes via a temp file so a dropped connection never leaves half an airspace file. Returns an error or null. */
     private fun save(name: String, input: InputStream): String? {
-        val tmp = File(dir, "$name.tmp")
+        val tmp = File(dir, "$name.${System.nanoTime()}.tmp")
         tmp.outputStream().use { input.copyTo(it) }
         val ok = tmp.bufferedReader().use { r -> OpenAir.parse(r).airspaces.isNotEmpty() }
         if (!ok) { tmp.delete(); return "Not an OpenAir airspace file" }
-        return if (tmp.renameTo(file(name))) null else "Could not save"
+        if (tmp.renameTo(file(name))) return null
+        tmp.delete()
+        return "Could not save"
     }
 
     companion object {

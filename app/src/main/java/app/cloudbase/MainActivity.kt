@@ -65,6 +65,7 @@ class MainActivity : Activity() {
     private var lastVersion = -1L
     private var lastStatus = ""
     private var zoomedToFix = false
+    private var exiting = false
     private var wasCircling = false
     /** Zoom to go back to when the thermal is left; NaN when we did not zoom in for it. */
     private var zoomBeforeThermal = Double.NaN
@@ -149,6 +150,9 @@ class MainActivity : Activity() {
         super.onStart()
         visible = true
         lastVersion = -1
+        // The service may have stopped itself (long wait with the screen off) or been stopped from
+        // its notification; coming back to the app always brings it back.
+        if (!Hub.serviceRunning && !exiting) restartService()
         handler.post(tick)
     }
 
@@ -240,7 +244,7 @@ class MainActivity : Activity() {
     }
 
     private fun confirmExit() {
-        val exit = { FlightService.stop(this); finish() }
+        val exit = { exiting = true; FlightService.stop(this); finish() }
         if (!Hub.computer.recording) { exit(); return }
         AlertDialog.Builder(this).setMessage("A flight is being recorded. Stop the log and exit?")
             .setPositiveButton("Stop and exit") { _, _ -> exit() }.setNegativeButton("Keep flying", null).show()
@@ -308,9 +312,13 @@ class MainActivity : Activity() {
 
     private fun ensurePermissions() {
         val need = ArrayList<String>()
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // Android 12+ ignores a request for precise location unless approximate is asked for with it.
+            need.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            need.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.POST_NOTIFICATIONS)
-        if (need.isEmpty()) restartService() else requestPermissions(need.toTypedArray(), REQ_PERMISSIONS)
+        if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_PERMISSIONS)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -338,6 +346,7 @@ class MainActivity : Activity() {
         Thread {
             val name = try { contentResolver.openInputStream(uri)?.use { Hub.airspace.import(display, it) } } catch (e: Exception) { null }
             handler.post {
+                if (isFinishing || isDestroyed) return@post
                 if (name == null) {
                     AlertDialog.Builder(this).setMessage("That file does not look like OpenAir airspace.").setPositiveButton("OK", null).show()
                 } else {

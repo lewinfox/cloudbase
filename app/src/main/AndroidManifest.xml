@@ -10,6 +10,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Needed to find a text-to-speech engine for spoken alerts on Android 11+. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <uses-feature android:name="android.hardware.location.gps" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />

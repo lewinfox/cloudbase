@@ -152,6 +152,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
 }
 
 class FlightsPage(act: MainActivity) : Page(act, "Flights") {
+    private var reading = false
     private val date = SimpleDateFormat("EEE d MMM yyyy, HH:mm", Locale.getDefault())
 
     override fun build() {
@@ -165,11 +166,13 @@ class FlightsPage(act: MainActivity) : Page(act, "Flights") {
         note("Logs start at takeoff and stop at landing by themselves. Files are standard IGC; they carry no validation signature, so some competitions will not accept them.")
         section("Logbook")
         val files = Hub.logs.list()
+        val pending = ArrayList<java.io.File>()
         if (files.isEmpty()) note("No flights yet.")
         for (f in files) {
             if (f == Hub.logs.current) { row(f.name, "Recording…"); continue }
-            val s = Hub.logs.summary(f)
-            val line = if (s == null) "Empty log" else
+            val s = Hub.logs.cached(f)
+            if (s == null && !Hub.logs.isRead(f)) pending.add(f)
+            val line = if (s == null) (if (Hub.logs.isRead(f)) "Empty log" else "Reading…") else
                 "${s.durationS / 3600}h ${"%02d".format(s.durationS / 60 % 60)}m · max ${u.altWithUnit(s.maxAltM.toDouble())} · ${"%.1f".format(s.trackLengthM / 1000.0)} km flown"
             list.addView(Theme.column(act, 0, 10).apply {
                 addView(Theme.body(act, if (s == null) f.name else date.format(Date(s.dateUtcMs))))
@@ -185,6 +188,17 @@ class FlightsPage(act: MainActivity) : Page(act, "Flights") {
             })
             list.addView(Theme.rule(act))
         }
+        if (pending.isNotEmpty()) readSummaries(pending)
+    }
+
+    /** Hours-long logs take a moment to read, so that happens off the main thread, once per file. */
+    private fun readSummaries(files: List<java.io.File>) {
+        if (reading) return
+        reading = true
+        Thread {
+            for (f in files) Hub.logs.read(f)
+            list.post { reading = false; rebuild() }
+        }.start()
     }
 
     private fun share(f: java.io.File) {
@@ -253,7 +267,7 @@ class AirspacePage(act: MainActivity) : Page(act, "Airspace") {
 }
 
 class OfflinePage(act: MainActivity) : Page(act, "Offline maps") {
-    private val downloader = RegionDownloader(Hub.tiles)
+    private val downloader = Hub.downloader
     private var status = ""
 
     override fun build() {

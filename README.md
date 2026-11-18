@@ -102,13 +102,14 @@ to share or upload it.
 - Map tiles are picked a level or two coarser on high-density screens (legible labels, a
   quarter of the downloads), cached on disk for good, and held in a 24 MB memory cache.
 - One background service owns the sensors, holds a wake lock only while airborne, and stops
-  itself after 15 minutes on the ground with the app closed.
+  itself after an hour on the ground with the screen off or the app closed (reopening the app
+  starts it again).
 
 ## Layout
 
 - `core/` — pure Kotlin, no Android, all the logic that can be wrong in the air: OpenAir
   parser, airspace geometry and alerting, vario filter, wind, thermal map, flight detection,
-  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (240
+  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (243
   tests) includes whole simulated flights through the full pipeline.
 - `app/` — Android: `FlightService` (GPS, sensors, demo), `map/` (tile view, cache, terrain
   elevation), `ui/` (instruments, overlays, side view, settings pages).

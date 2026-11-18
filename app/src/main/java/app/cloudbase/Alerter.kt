@@ -3,6 +3,7 @@ package app.cloudbase
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -38,13 +39,21 @@ class Alerter(private val context: Context) {
         }
     }
 
-    private fun speak(text: String, delayMs: Long) {
-        val engine = tts ?: TextToSpeech(context.applicationContext) { status ->
+    /** Start the speech engine ahead of need: it takes a second or more, and the first alert must not be the one that is lost. */
+    fun prepare(voice: Boolean) {
+        if (!voice || tts != null) return
+        tts = TextToSpeech(context.applicationContext) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) tts?.language = Locale.getDefault()
-        }.also { tts = it }
+        }
+    }
+
+    private fun speak(text: String, delayMs: Long) {
+        prepare(true)
+        // Same stream as the tones, so both follow the alarm volume rather than media volume.
+        val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_ALARM) }
         handler.postDelayed({
-            if (ttsReady) engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "alert")
+            if (ttsReady) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "alert")
         }, delayMs)
     }
 
