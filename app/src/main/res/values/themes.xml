@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Framework Material light theme: no AppCompat. Light because it has to be read in full sun. -->
+    <style name="Theme.Cloudbase" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#1565C0</item>
+        <item name="android:windowBackground">#FFFFFF</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27" xmlns:tools="http://schemas.android.com/tools">true</item>
+    </style>
+</resources>
