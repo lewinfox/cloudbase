@@ -1,13 +1,16 @@
 package app.cloudbase.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import app.cloudbase.Hub
 import app.cloudbase.core.Geo
+import app.cloudbase.core.LocalProjection
 import app.cloudbase.core.airspace.Airspace
 import app.cloudbase.core.airspace.AlertLevel
 import app.cloudbase.core.airspace.Relevance
@@ -108,41 +111,77 @@ class AirspaceOverlay(context: Context) : MapView.Overlay {
     }
 }
 
-/** The lift/sink heat map: red where the air was rising, blue where it was sinking. */
+/**
+ * The lift/sink heat map: a smooth cloud over the air that has been flown through, warm colours
+ * where it was rising and cool where it was sinking, stronger colour for stronger air.
+ *
+ * Every thermal-map cell sits on one regular lattice (they all drift together), so the cells map
+ * straight onto the pixels of a small bitmap, which [HeatGrid] smooths and the canvas scales up.
+ */
 class ThermalOverlay(context: Context) : MapView.Overlay, ThermalMap.Visitor {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val minR = context.dp(3f)
-    private var canvas: Canvas? = null
-    private var proj: MapView.Projection? = null
-    private var radius = 0f
+    private val grid = HeatGrid(SIZE)
+    private val bitmap = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val dst = RectF()
+
+    // Lattice bookkeeping for the pass in progress.
+    private var proj = LocalProjection(0.0, 0.0)
+    private var cell = 30.0
+    private var hasPhase = false
+    private var x0 = 0.0   // metres (east, north) of one lattice point: the first cell seen
+    private var y0 = 0.0
+    private var cx = 0     // lattice index of the view centre relative to that point
+    private var cy = 0
 
     override fun draw(canvas: Canvas, p: MapView.Projection) {
         if (!Hub.settings.showThermals) return
         val t = Hub.computer.thermals
         val now = Hub.computer.fix?.timeMs ?: return
         if (t.size == 0) return
-        this.canvas = canvas
-        proj = p
-        // Slightly larger than half a cell so neighbouring cells merge into a smooth patch.
-        radius = max(minR, (t.cellM * 0.9 / p.metresPerPixel).toFloat())
-        t.forEach(p.minLat, p.minLon, p.maxLat, p.maxLon, now, this)
-        this.canvas = null
+
+        // The bitmap covers SIZE cells around the middle of the view (about 2.9 km at 30 m cells).
+        val midLat = (p.minLat + p.maxLat) / 2
+        val midLon = p.lon(p.width / 2f)
+        proj = LocalProjection(midLat, midLon)
+        cell = t.cellM
+        hasPhase = false
+        grid.clear()
+        val half = SIZE / 2 * cell
+        t.forEach(proj.lat(-half), proj.lon(-half), proj.lat(half), proj.lon(half), now, this)
+        if (!hasPhase) return
+        grid.render(FULL_SCALE_MS)
+        bitmap.setPixels(grid.pixels, 0, SIZE, 0, 0, SIZE, SIZE)
+
+        // Pixel (i, j) is the lattice point (cx - SIZE/2 + i, cy + SIZE/2 - j): north is up.
+        val west = x0 + (cx - SIZE / 2 - 0.5) * cell
+        val east = west + SIZE * cell
+        val north = y0 + (cy + SIZE / 2 + 0.5) * cell
+        val south = north - SIZE * cell
+        dst.set(p.x(proj.lon(west)), p.y(proj.lat(north)), p.x(proj.lon(east)), p.y(proj.lat(south)))
+        canvas.drawBitmap(bitmap, null, dst, paint)
     }
 
     override fun cell(lat: Double, lon: Double, climb: Double, ageMs: Long) {
-        val strength = min(1.0, abs(climb) / FULL_SCALE_MS)
-        if (strength < 0.1) return
+        val x = proj.x(lon)
+        val y = proj.y(lat)
+        if (!hasPhase) {
+            hasPhase = true
+            x0 = x; y0 = y
+            cx = Math.round(-x0 / cell).toInt()
+            cy = Math.round(-y0 / cell).toInt()
+        }
+        val ix = Math.round((x - x0) / cell).toInt() - cx + SIZE / 2
+        val iy = cy + SIZE / 2 - Math.round((y - y0) / cell).toInt()
         // Fade with age: an old thermal has probably moved on or died.
-        val fresh = 1.0 - 0.7 * min(1.0, ageMs / FADE_MS)
-        paint.color = Theme.climbColor(climb, (190 * strength * fresh).toInt())
-        val p = proj ?: return
-        canvas?.drawCircle(p.x(lon), p.y(lat), radius, paint)
+        val fresh = 1f - 0.75f * min(1.0, ageMs / FADE_MS).toFloat()
+        grid.splat(ix, iy, climb.toFloat(), fresh)
     }
 
     companion object {
-        /** Lift or sink at which the colour is fully saturated. */
-        const val FULL_SCALE_MS = 3.0
+        /** Lift or sink at which the colour is at its strongest. */
+        const val FULL_SCALE_MS = 3.0f
         const val FADE_MS = 15 * 60_000.0
+        const val SIZE = 96
     }
 }
 

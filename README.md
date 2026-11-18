@@ -36,9 +36,9 @@ is carrying you on the map.
 
 **Map.** North-up topographic map. Airspace you must stay out of is outlined blue (controlled)
 or red (restricted, danger, military); informational airspace is thin grey. Tap an airspace for
-its limits, or to ignore it. Red and blue blobs are the **thermal map**: red where the air was
-rising, blue where it was sinking, drifting downwind with the air; the red ring marks the best
-lift nearby. The map **zooms in close when you start circling** and back out when you leave.
+its limits, or to ignore it. The coloured cloud is the **thermal map**: warm where the air was
+rising (amber for weak lift through to deep red for strong), cool where it was sinking (pale to
+deep blue), drifting downwind with the air; the red ring marks the best lift nearby. The map **zooms in close when you start circling** and back out when you leave.
 The dashed line ends in an **×** where your present glide meets the ground (while climbing it
 shows where you will be in a minute instead).
 
