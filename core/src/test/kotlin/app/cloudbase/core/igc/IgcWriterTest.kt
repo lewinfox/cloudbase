@@ -30,7 +30,7 @@ class IgcWriterTest {
         val t0 = ms("2026-11-18T10:00:00Z")
         w.header(header, t0)
         w.fix(t0, 46.0, 7.75, 1523.4, 1560.6)
-        w.fix(t0 + 1900, 46.0005, 7.7505, nan, -12.4)
+        w.fix(t0 + 1400, 46.0005, 7.7505, nan, -12.4)
         w.fix(t0 + 2000, -33.8688, -151.2093, 1000.0, 1000.5)
         val expected = listOf(
             "AXCB001-Cloudbase",
@@ -139,10 +139,11 @@ class IgcWriterTest {
     @Test
     fun timeOfDay() {
         val day = ms("2026-11-18T00:00:00Z")
-        assertEquals("235959", b(day + 86_399_999, 1.0, 1.0).substring(1, 7))
+        assertEquals("235959", b(day + 86_399_499, 1.0, 1.0).substring(1, 7))
+        assertEquals("000000", b(day + 86_399_999, 1.0, 1.0).substring(1, 7)) // 1 ms early rounds to the next second
         assertEquals("000000", b(day + 86_400_000, 1.0, 1.0).substring(1, 7)) // across midnight
         assertEquals("000001", b(day + 86_401_000, 1.0, 1.0).substring(1, 7))
-        assertEquals("010203", b(day + (3600 + 120 + 3) * 1000L + 999, 1.0, 1.0).substring(1, 7)) // ms are truncated
+        assertEquals("010203", b(day + (3600 + 120 + 3) * 1000L + 499, 1.0, 1.0).substring(1, 7)) // rounded to the nearest second
         assertEquals("235959", b(-1000L, 1.0, 1.0).substring(1, 7)) // before 1970 is fine
         assertEquals("000000", b(0L, 1.0, 1.0).substring(1, 7))
     }

@@ -50,7 +50,7 @@ class GeoidTest {
         assertEquals(52.5, Geoid.height(46.0, 7.75), 2.5) // Zermatt
         assertEquals(11.5, Geoid.height(-43.5, 172.6), 2.5) // Christchurch
         assertEquals(45.9, Geoid.height(51.5, -0.1), 2.5) // London
-        assertEquals(-106.6, Geoid.height(5.0, 79.0), 4.0) // global minimum: steep, 2 degree grid is ~3 m off here
+        assertEquals(-106.6, Geoid.height(5.0, 79.0), 2.5) // global minimum
     }
 
     @Test
@@ -63,7 +63,7 @@ class GeoidTest {
             worst = maxOf(worst, err)
             sum += err
             if (err <= 2.5) within25++
-            assertTrue("(${r[0]}, ${r[1]}) error $err", err <= 4.0) // a few steep spots exceed 2.5 m
+            assertTrue("(${r[0]}, ${r[1]}) error $err", err <= 2.5)
         }
         println("Geoid: ${reference.size} points, max error %.2f m, mean %.2f m, $within25 within 2.5 m".format(worst, sum / reference.size))
         assertTrue(within25 >= reference.size * 3 / 4)
@@ -96,10 +96,10 @@ class GeoidTest {
     @Test
     fun bilinearInterpolatesBetweenNodes() {
         val a = Geoid.height(40.0, 10.0)
-        val b = Geoid.height(40.0, 12.0)
-        assertEquals((a + b) / 2, Geoid.height(40.0, 11.0), 1e-9)
-        val c = Geoid.height(42.0, 10.0)
-        assertEquals((a + c) / 2, Geoid.height(41.0, 10.0), 1e-9)
+        val b = Geoid.height(40.0, 11.0)
+        assertEquals((a + b) / 2, Geoid.height(40.0, 10.5), 1e-9)
+        val c = Geoid.height(41.0, 10.0)
+        assertEquals((a + c) / 2, Geoid.height(40.5, 10.0), 1e-9)
     }
 
     @Test

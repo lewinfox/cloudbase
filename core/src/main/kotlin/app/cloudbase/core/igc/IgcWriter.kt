@@ -79,7 +79,8 @@ class IgcWriter(private val out: Appendable) {
     fun fix(timeUtcMs: Long, lat: Double, lon: Double, pressureAltM: Double, gpsAltMslM: Double) {
         if (!lat.isFinite() || !lon.isFinite()) return
         val b = line
-        val sec = (Math.floorMod(timeUtcMs, DAY_MS) / 1000).toInt()
+        // Rounded, not truncated: some receivers stamp fixes a few ms before the whole second.
+        val sec = (Math.floorMod(timeUtcMs + 500, DAY_MS) / 1000).toInt()
         put(b, 1, sec / 3600, 2)
         put(b, 3, sec / 60 % 60, 2)
         put(b, 5, sec % 60, 2)

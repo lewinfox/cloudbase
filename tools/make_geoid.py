@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate core/src/main/resources/app/cloudbase/core/egm96_2deg.s8 from the real EGM96 15' grid.
+"""Generate core/src/main/resources/app/cloudbase/core/egm96_1deg.s8 from the real EGM96 15' grid.
 
 Source: PROJ's vdatum copy of NGA's EGM96 15' grid (egm96_15.gtx, 721 x 1440 big-endian float32,
 origin -90,-180, 0.25 deg). Download it first:
@@ -7,16 +7,16 @@ origin -90,-180, 0.25 deg). Download it first:
 Usage (needs numpy):
     python3 -I make_geoid.py egm96_15.gtx [out.s8] [--report] [--points]
 
-Output format: signed bytes, whole metres, row-major, 91 latitude rows from -90 (south) to +90, each
-with 180 longitude columns from -180 (inclusive) to +178 (the 180 column wraps to -180). 2 deg
-spacing, 16380 bytes. Nodes are exact 15' samples (2 deg is a multiple of 0.25 deg), rounded.
+Output format: signed bytes, whole metres, row-major, 181 latitude rows from -90 (south) to +90, each
+with 360 longitude columns from -180 (inclusive) to +179 (the 180 column wraps to -180). 1 deg
+spacing, 65160 bytes. Nodes are exact 15' samples (1 deg is a multiple of 0.25 deg), rounded.
 --report prints the interpolation error of the coarse grid against the 15' grid.
 --points prints reference values (15' bilinear) used by GeoidTest.
 """
 import hashlib, struct, sys
 import numpy as np
 
-STEP = 2
+STEP = 1
 SHA256 = "c02a6eb70a7a78efebe5adf3ade626eb75390e170bb8b3f36136a2c28f5326a0"
 
 
@@ -44,7 +44,8 @@ def full_res(g, lat, lon):
 def build(g):
     k = STEP * 4
     coarse = np.rint(g[::k, ::k]).astype(np.int64)  # 91 x 180 (drops the duplicate +180 column)
-    assert coarse.shape == (91, 180) and coarse.min() >= -128 and coarse.max() <= 127
+    coarse = coarse[:, :360 // STEP]
+    assert coarse.shape == (180 // STEP + 1, 360 // STEP) and coarse.min() >= -128 and coarse.max() <= 127
     return coarse
 
 
@@ -52,10 +53,10 @@ def coarse_at(c, lat, lon):
     """Same interpolation the Kotlin code does (for error reporting)."""
     x = ((lon + 180.0) % 360.0) / STEP
     y = (lat + 90.0) / STEP
-    i = min(int(y), 89)
-    j = int(x) % 180
+    i = min(int(y), 180 // STEP - 1)
+    j = int(x) % (360 // STEP)
     fy, fx = y - i, x - int(x)
-    j1 = (j + 1) % 180
+    j1 = (j + 1) % (360 // STEP)
     return (c[i, j] * (1 - fx) * (1 - fy) + c[i, j1] * fx * (1 - fy)
             + c[i + 1, j] * (1 - fx) * fy + c[i + 1, j1] * fx * fy)
 
@@ -64,7 +65,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     g = load(args[0])
     c = build(g)
-    out = args[1] if len(args) > 1 else "../core/src/main/resources/app/cloudbase/core/egm96_2deg.s8"
+    out = args[1] if len(args) > 1 else "../core/src/main/resources/app/cloudbase/core/egm96_1deg.s8"
     open(out, "wb").write(c.astype(np.int8).tobytes())
     print("wrote", out, c.size, "bytes")
     if "--report" in sys.argv:

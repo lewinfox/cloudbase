@@ -102,7 +102,7 @@ class FlightComputer(private val terrain: (lat: Double, lon: Double) -> Double) 
 
     private var writer: IgcWriter? = null
     private var unflushed = 0
-    private val pre = PreBuffer(40)
+    private val pre = PreBuffer(120)
 
     fun setAirspace(index: AirspaceIndex?, policy: AirspacePolicy = AirspacePolicy(), config: MonitorConfig = MonitorConfig()) {
         this.index = index
