@@ -85,7 +85,7 @@ object Hub {
             s.pilot, s.glider, s.gliderId, version(),
             "${Build.MANUFACTURER} ${Build.MODEL}", computer.hasBaro,
         )
-        computer.setAirspace(airspace.index, policy(), MonitorConfig(s.horizontalMarginM, s.verticalMarginM, s.lookaheadS))
+        computer.setAirspace(airspace.index, policy(), MonitorConfig(s.lookaheadS))
     }
 
     fun policy() = AirspacePolicy(ignoredNames = settings.ignoredAirspaces, alertMbz = settings.alertMbz)

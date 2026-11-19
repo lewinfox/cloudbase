@@ -80,6 +80,41 @@ class GlyphButton(context: Context, private val glyph: Glyph, onClick: () -> Uni
     }
 }
 
+/**
+ * Start/stop the flight log: a red dot to record, a red square to stop, like any recorder.
+ * Bigger than the map buttons because it is the one control that matters on launch.
+ */
+class RecordButton(context: Context, onClick: () -> Unit) : View(context) {
+    var recording = false
+        set(v) {
+            if (field == v) return
+            field = v
+            contentDescription = if (v) "Stop recording" else "Start recording"
+            invalidate()
+        }
+    private val red = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.DANGER }
+    private val rect = RectF()
+
+    init {
+        background = Theme.ripple(GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) })
+        elevation = context.dp(3f)
+        contentDescription = "Start recording"
+        setOnClickListener { onClick() }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        if (recording) {
+            val h = width * 0.17f
+            rect.set(cx - h, cy - h, cx + h, cy + h)
+            canvas.drawRoundRect(rect, h * 0.25f, h * 0.25f, red)
+        } else {
+            canvas.drawCircle(cx, cy, width * 0.24f, red)
+        }
+    }
+}
+
 /** An on/off switch drawn in the brand colours. Display only: the row it sits in takes the tap. */
 class SwitchView(context: Context, private val on: Boolean) : View(context) {
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (on) Theme.ACCENT else Color.parseColor("#C9D1DA") }

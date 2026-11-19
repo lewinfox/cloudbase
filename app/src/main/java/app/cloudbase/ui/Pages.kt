@@ -126,9 +126,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Settings") {
         toggle("Alert tone", s.alertSound) { s.alertSound = it }
         toggle("Spoken alert", s.alertVoice) { s.alertVoice = it }
         row("Mandatory broadcast zones", if (s.alertMbz) "Alert" else "Show only") { s.alertMbz = !s.alertMbz; Hub.applySettings(); act.airspaceChanged(); rebuild() }
-        row("Warn within (sideways)", "${fmt(s.horizontalMarginM)} m") { number("Horizontal margin, metres", s.horizontalMarginM, 50.0, 2000.0) { s.horizontalMarginM = it } }
-        row("Warn within (vertical)", "${fmt(s.verticalMarginM)} m") { number("Vertical margin, metres", s.verticalMarginM, 20.0, 500.0) { s.verticalMarginM = it } }
-        row("Look ahead", "${fmt(s.lookaheadS)} s") { number("Predict this many seconds ahead", s.lookaheadS, 15.0, 180.0) { s.lookaheadS = it } }
+        row("Warning time", "${fmt(s.lookaheadS)} s") { number("Warn this many seconds before a boundary", s.lookaheadS, 15.0, 180.0) { s.lookaheadS = it } }
+        note("Warns when you could reach an airspace boundary within this time on your present course and climb. Boundaries count as closer by however far off the GPS (and barometer, if the phone has one) could be, so with a poor fix warnings come earlier. Each change is announced once: dismiss the banner with ✕ or a swipe left.")
 
         section("Display")
         row("Altitude", if (s.altFeet) "Feet" else "Metres") { choose("Altitude in", listOf("Metres", "Feet"), if (s.altFeet) 1 else 0) { s.altFeet = it == 1 } }
@@ -173,11 +172,11 @@ class FlightsPage(act: MainActivity) : Page(act, "Flights") {
         val c = Hub.computer
         val u = Units(Hub.settings)
         if (c.recording) {
-            button("Stop recording now", danger = true) { c.forceFlying(false); rebuild() }
+            button("Stop recording now", danger = true) { c.stopRecording(); rebuild() }
         } else {
-            button("Start recording now") { c.forceFlying(true); rebuild() }
+            button("Start recording now") { c.startRecording(); rebuild() }
         }
-        note("Logs start at takeoff and stop at landing by themselves. Files are standard IGC; they carry no validation signature, so some competitions will not accept them.")
+        note("Logs start at takeoff and stop at landing by themselves, or use the red record button on the map. Files are standard IGC; they carry no validation signature, so some competitions will not accept them.")
         section("Logbook")
         val files = Hub.logs.list()
         val pending = ArrayList<java.io.File>()

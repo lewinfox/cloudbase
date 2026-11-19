@@ -2,10 +2,12 @@ package app.cloudbase.ui
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 import app.cloudbase.Hub
+import app.cloudbase.core.CeilingLevel
 import app.cloudbase.core.flight.WindMethod
 import app.cloudbase.ui.Theme.dp
 import app.cloudbase.ui.Theme.sp
@@ -24,6 +26,8 @@ class InstrumentBar(context: Context) : View(context) {
     private val linePaint = Paint().apply { color = Theme.LINE; strokeWidth = 1f }
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ACCENT; style = Paint.Style.FILL }
     private val arrow = Path()
+    private val alertFill = Paint()
+    private var ceiling = CeilingLevel.NONE
 
     private var speed = "—"
     private var alt = "—"
@@ -50,6 +54,7 @@ class InstrumentBar(context: Context) : View(context) {
         speed = if (f == null) "—" else u.speed(f.speed)
         alt = u.alt(c.altMsl)
         altSub = if (c.agl.isNaN()) "" else "AGL ${u.alt(c.agl.coerceAtLeast(0.0))}"
+        ceiling = c.ceilingLevel
         val v = c.climb
         climb = Units.signed(v)
         climbColor = when { v.isNaN() -> Theme.TEXT; v >= 0.3 -> Theme.LIFT; v <= -2.0 -> Theme.SINK; else -> Theme.TEXT }
@@ -72,7 +77,14 @@ class InstrumentBar(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val w = width / 4f
         cell(canvas, 0f, w, speedLabel, speed, "", Theme.TEXT)
-        cell(canvas, w, w, altLabel, alt, altSub, Theme.TEXT)
+        // Altitude turns amber as the airspace limit above comes within reach, red within the
+        // warning time (see FlightComputer.ceilingLevel).
+        if (ceiling != CeilingLevel.NONE) {
+            alertFill.color = if (ceiling == CeilingLevel.RED) Theme.DANGER else Theme.WARN
+            canvas.drawRect(w, 0f, 2 * w, height - 1f, alertFill)
+        }
+        val onRed = ceiling == CeilingLevel.RED
+        cell(canvas, w, w, altLabel, alt, altSub, if (onRed) Color.WHITE else Theme.TEXT, onRed)
         cell(canvas, 2 * w, w, "CLIMB m/s", climb, climbSub, climbColor)
         cell(canvas, 3 * w, w, windLabel, wind, windSub, Theme.TEXT)
         for (i in 1..3) canvas.drawLine(i * w, height * 0.18f, i * w, height * 0.82f, linePaint)
@@ -80,8 +92,10 @@ class InstrumentBar(context: Context) : View(context) {
         if (!windFrom.isNaN()) drawWindArrow(canvas, 4 * w - context.dp(20f), context.dp(40f))
     }
 
-    private fun cell(canvas: Canvas, x: Float, w: Float, label: String, value: String, sub: String, color: Int) {
+    private fun cell(canvas: Canvas, x: Float, w: Float, label: String, value: String, sub: String, color: Int, onRed: Boolean = false) {
         val pad = context.dp(10f)
+        labelPaint.color = if (onRed) Color.WHITE else Theme.MUTED
+        subPaint.color = if (onRed) Color.WHITE else Theme.MUTED
         canvas.drawText(label, x + pad, context.dp(19f), labelPaint)
         valuePaint.color = color
         // Shrink long values (e.g. 12,500 ft) rather than clip them.

@@ -19,6 +19,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.cloudbase.core.airspace.Airspace
+import app.cloudbase.core.airspace.AirspaceInfo
 import app.cloudbase.core.airspace.AirspaceStatus
 import app.cloudbase.core.airspace.AlertLevel
 import app.cloudbase.core.airspace.VerticalRelation
@@ -30,6 +31,7 @@ import app.cloudbase.map.TileSource
 import app.cloudbase.ui.AircraftOverlay
 import app.cloudbase.ui.AirspaceOverlay
 import app.cloudbase.ui.AirspaceStyle
+import app.cloudbase.ui.AlertBanner
 import app.cloudbase.ui.Brand
 import app.cloudbase.ui.AirspacePage
 import app.cloudbase.ui.FlightsPage
@@ -38,6 +40,7 @@ import app.cloudbase.ui.MenuSheet
 import app.cloudbase.ui.InstrumentBar
 import app.cloudbase.ui.OfflinePage
 import app.cloudbase.ui.Page
+import app.cloudbase.ui.RecordButton
 import app.cloudbase.ui.SettingsPage
 import app.cloudbase.ui.SideView
 import app.cloudbase.ui.Theme
@@ -56,13 +59,13 @@ class MainActivity : Activity() {
     private lateinit var map: MapView
     private lateinit var layer: TileLayer
     private lateinit var side: SideView
-    private lateinit var banner: TextView
+    private lateinit var banner: AlertBanner
     private lateinit var chip: TextView
+    private lateinit var record: RecordButton
     private lateinit var recenter: View
     private var menu: View? = null
     private lateinit var root: FrameLayout
     private val airspaceOverlay by lazy { AirspaceOverlay(this) }
-    private val bannerShape = GradientDrawable()
     private var page: Page? = null
 
     private val handler = Handler(Looper.getMainLooper())
@@ -108,19 +111,14 @@ class MainActivity : Activity() {
 
         instruments = InstrumentBar(this)
         side = SideView(this)
-        banner = Theme.body(this, "", Color.WHITE, 16f).apply {
-            typeface = Theme.CONDENSED_BOLD
-            background = bannerShape
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            visibility = View.GONE
-        }
-        bannerShape.cornerRadius = dp(8f)
+        banner = AlertBanner(this) { Hub.computer.dismissBanner(); refresh() }
         chip = Theme.body(this, "", Theme.TEXT, 12.5f).apply {
             typeface = Theme.CONDENSED_BOLD
             background = GradientDrawable().apply { cornerRadius = dp(15f); setColor(Color.WHITE) }
             elevation = dp(3f)
             setPadding(dp(12), dp(6), dp(12), dp(6))
         }
+        record = RecordButton(this) { toggleRecording() }
         recenter = GlyphButton(this, GlyphButton.Glyph.RECENTRE) { map.follow = true; Hub.computer.fix?.let { map.setCenter(it.lat, it.lon) } }.apply { visibility = View.GONE }
 
         val buttons = LinearLayout(this).apply {
@@ -135,9 +133,10 @@ class MainActivity : Activity() {
         }
         val mapFrame = FrameLayout(this).apply {
             addView(map, FrameLayout.LayoutParams(-1, -1))
-            addView(banner, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(dp(10), dp(10), dp(62), 0) })
             addView(buttons, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
-            addView(chip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
+            // Clear of the record button, level with its centre.
+            addView(chip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(78), dp(25)) })
+            addView(record, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(12), dp(12)) })
         }
         root = FrameLayout(this).apply {
             fitsSystemWindows = true
@@ -147,6 +146,7 @@ class MainActivity : Activity() {
                 setBackgroundColor(Theme.BG)
                 orientation = LinearLayout.VERTICAL
                 addView(instruments, LinearLayout.LayoutParams(-1, -2))
+                addView(banner, LinearLayout.LayoutParams(-1, -2))
                 addView(mapFrame, LinearLayout.LayoutParams(-1, 0, 1f))
                 addView(side, LinearLayout.LayoutParams(-1, dp(150)))
             })
@@ -201,15 +201,36 @@ class MainActivity : Activity() {
         }
         map.invalidate()
         if (side.visibility == View.VISIBLE) side.refresh()
-        showBanner(c.statuses.firstOrNull())
+        showBanner(c.banner, c.info)
 
+        record.recording = c.recording
         val rec = if (c.recording) {
-            val s = ((c.fix?.timeMs ?: 0L) - c.takeoffTimeMs).coerceAtLeast(0) / 1000
-            "● REC %d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60)
-        } else if (c.flightState == FlightState.FLYING) "Flying · not recording" else "Ready · log starts at takeoff"
-        chip.text = if (Hub.gpsStatus.isEmpty()) rec else if (c.recording) "$rec · ${Hub.gpsStatus}" else Hub.gpsStatus
+            val s = ((c.fix?.timeMs ?: 0L) - c.recordStartMs).coerceAtLeast(0) / 1000
+            "REC %d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60)
+        } else if (c.flightState == FlightState.FLYING) "Not recording" else ""
+        val text = listOf(rec, Hub.gpsStatus).filter { it.isNotEmpty() }.joinToString(" · ")
+        chip.text = text
+        chip.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
         chip.setTextColor(if (c.recording) Theme.DANGER else Theme.TEXT)
     }
+
+    /**
+     * Start is immediate. Stop asks first: a gloved mis-tap in the air would otherwise end the
+     * log, and with automatic recording it would not restart until the next landing.
+     */
+    private fun toggleRecording() {
+        val c = Hub.computer
+        if (!c.recording) {
+            if (!c.startRecording()) toast("No GPS fix yet")
+            refresh()
+            return
+        }
+        AlertDialog.Builder(this).setMessage("Stop recording this flight?")
+            .setPositiveButton("Stop recording") { _, _ -> c.stopRecording(); refresh() }
+            .setNegativeButton("Keep recording", null).show()
+    }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     /**
      * Zoom in close while circling, so the lift/sink map around the glider is big enough to
@@ -231,11 +252,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showBanner(s: AirspaceStatus?) {
-        if (s == null) { banner.visibility = View.GONE; return }
-        bannerShape.setColor(if (s.level == AlertLevel.NEAR) Theme.WARN else Theme.DANGER)
-        banner.text = describe(s, Units(Hub.settings))
-        banner.visibility = View.VISIBLE
+    private fun showBanner(s: AirspaceStatus?, info: AirspaceInfo?) {
+        if (s != null) {
+            banner.show(describe(s, Units(Hub.settings)), if (s.level == AlertLevel.APPROACHING) AlertBanner.Kind.WARN else AlertBanner.Kind.DANGER)
+        } else if (info != null) {
+            banner.show(describe(info), AlertBanner.Kind.INFO)
+        } else {
+            banner.hide()
+        }
     }
 
     // --- menu and pages ------------------------------------------------------------------------
@@ -387,17 +411,21 @@ class MainActivity : Activity() {
         /** Whether the UI is in front; the service uses it to decide when it has been forgotten. */
         @Volatile var visible = false
 
+        /** Dropped through a floor: the zone you are in now, and the one above you left. */
+        fun describe(n: AirspaceInfo): String {
+            fun names(l: List<Airspace>) = l.joinToString(", ") { AirspaceStyle.title(it) }
+            return "IN ${names(n.entered)} · below ${names(n.left)}"
+        }
+
         /** One line for the banner: what, where, how soon. */
         fun describe(s: AirspaceStatus, u: Units): String {
             val a = s.airspace
             val name = AirspaceStyle.title(a)
+            val secs = if (s.timeToEntryS.isNaN() || s.timeToEntryS < 1) "" else " in ${s.timeToEntryS.roundToInt()} s"
             return when (s.level) {
                 AlertLevel.INSIDE -> "INSIDE $name · ${a.lower.text}–${a.upper.text}"
-                AlertLevel.IMMINENT -> {
-                    val t = if (s.timeToEntryS.isNaN()) "" else " in ${s.timeToEntryS.roundToInt()} s"
-                    "AIRSPACE$t · $name · ${where(s, u)}"
-                }
-                else -> "Near $name · ${where(s, u)}"
+                AlertLevel.CEILING -> "CEILING$secs · $name · top ${a.upper.text}, ${u.altWithUnit(s.verticalM)} above"
+                else -> "APPROACHING $name$secs · ${where(s, u)}"
             }
         }
 

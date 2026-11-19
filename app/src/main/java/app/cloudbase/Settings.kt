@@ -18,8 +18,6 @@ class Settings(context: Context) {
     var speedUnit: String by Str("speed_unit", "kmh")
     var alertSound: Boolean by Bool("alert_sound", true)
     var alertVoice: Boolean by Bool("alert_voice", true)
-    var horizontalMarginM: Double by Num("margin_h", 300.0)
-    var verticalMarginM: Double by Num("margin_v", 100.0)
     var lookaheadS: Double by Num("lookahead", 60.0)
     /** Also alert for mandatory broadcast zones (uncontrolled, but radio calls are required). */
     var alertMbz: Boolean by Bool("alert_mbz", false)

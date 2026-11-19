@@ -134,7 +134,7 @@ class FlightComputerTest {
         val sink = MemorySink()
         c.logSink = sink
         c.onFix(Fix(9_000_000_000_000L, sim.startLat, sim.startLon, sim.groundElevM, 0.0, Double.NaN))
-        c.forceFlying(true)
+        assertTrue(c.startRecording())
         assertEquals(1, sink.opened)
         c.reset()
         assertEquals(1, sink.closed)
@@ -151,6 +151,49 @@ class FlightComputerTest {
         assertEquals(2, sink.closed)
         // The header is written at takeoff, by which time the barometer is known.
         assertTrue(sink.text.contains("HFALPALTPRESSURE:ISA"))
+    }
+
+    @Test fun recordPressedOnLaunchKeepsOneLogThroughTakeoffUntilLanding() {
+        // Pressed two seconds in; the sim then stands still on launch for half a minute, longer
+        // than the detector needs to call a landing. That must not end the log.
+        val starts = ArrayList<Long>()
+        val r = fly(eachFix = { c, sim ->
+            if (sim.timeS in 2.0..3.0 && !c.recording) { assertTrue(c.startRecording()); starts.add(c.recordStartMs) }
+            if (!sim.flying && sim.timeS in 3.0..25.0) assertTrue("recording on launch at ${sim.timeS}", c.recording)
+        })
+        assertEquals(1, starts.size)
+        assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)
+        assertEquals(1, r.sink.opened)
+        assertEquals(1, r.sink.closed)
+        assertTrue(!r.computer.recording)
+        // The file covers the wait on launch and the whole flight.
+        assertTrue(IgcSummary.read(StringReader(r.sink.text.toString()))!!.durationS > 600)
+    }
+
+    @Test fun stopPressedInTheAirStaysStoppedUntilLanding() {
+        var stopped = false
+        val r = fly(eachFix = { c, sim ->
+            if (!stopped && sim.flying && c.recording && sim.timeS > 120) { c.stopRecording(); stopped = true }
+            if (stopped && sim.flying) assertTrue("restarted at ${sim.timeS}", !c.recording)
+        })
+        assertTrue(stopped)
+        assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)
+        assertEquals(1, r.sink.opened)
+        assertEquals(1, r.sink.closed)
+    }
+
+    @Test fun withAutoRecordOffTheButtonsStartAndEndTheFlight() {
+        var pressed = false
+        val r = fly(setup = { c, _ -> c.autoRecord = false }, eachFix = { c, sim ->
+            if (!pressed && sim.timeS >= 2.0) { c.startRecording(); pressed = true }
+            if (pressed && c.recording && sim.finished) c.stopRecording()
+        })
+        assertEquals(FlightEvent.TAKEOFF, r.events.first())
+        assertEquals(1, r.sink.opened)
+        r.computer.stopRecording()
+        assertEquals(listOf(FlightEvent.TAKEOFF, FlightEvent.LANDING), r.events)
+        assertEquals(1, r.sink.closed)
+        assertEquals(FlightState.GROUND, r.computer.flightState)
     }
 
     @Test fun retriesOpeningTheLogWhileAirborne() {
@@ -248,6 +291,101 @@ class FlightComputerTest {
         // The first warning must come while still below the floor, not once already inside.
         assertTrue("first alert was ${levels.first()}", levels.first() != AlertLevel.INSIDE)
         assertTrue("first warning at $firstWarnHeadroom m below the floor", firstWarnHeadroom > 20)
+    }
+
+    @Test fun headingHoldsStillWhileCirclingAndPointsDownwind() {
+        // Wind from 250 at 4 m/s: circling, the glider drifts towards 070.
+        var circlingFixes = 0
+        var sinceStart = 0
+        var biggestStep = 0.0
+        var offDownwind = 0
+        var last = Double.NaN
+        fly(wind = Wind(250.0, 4.0), eachFix = { c, _ ->
+            if (!c.circling) { sinceStart = 0; last = Double.NaN; return@fly }
+            // The first turn of each thermal is where the heading changes over from the glide
+            // to the drift: a real change, made once.
+            if (++sinceStart <= FIRST_TURN_S) return@fly
+            val h = c.heading.trackDeg
+            circlingFixes++
+            if (!last.isNaN()) biggestStep = maxOf(biggestStep, abs(Geo.angleDiff(h, last)))
+            last = h
+            if (abs(Geo.angleDiff(h, 70.0)) > 30) offDownwind++
+        })
+        assertTrue("circled for $circlingFixes s", circlingFixes > 200)
+        // The raw track turns 15-25 degrees every second; the heading barely moves.
+        assertTrue("heading moved up to $biggestStep degrees in a second", biggestStep < 10)
+        assertTrue("$offDownwind of $circlingFixes fixes not downwind", offDownwind < circlingFixes / 20)
+    }
+
+    private val FIRST_TURN_S = 25
+
+    /** Circles of [radiusNm] around launch, from OpenAir text; returns them as parsed. */
+    private fun zones(sim: FlightSim, vararg z: Triple<String, String, String>, radiusNm: Int = 20): List<app.cloudbase.core.airspace.Airspace> {
+        val text = z.joinToString("\n") { (name, lo, hi) ->
+            "AC D\nAN $name\nAL $lo\nAH $hi\nV X=${dms(sim.startLat)} N ${dms(sim.startLon)} E\nDC $radiusNm"
+        }
+        val parsed = OpenAir.parse(StringReader(text))
+        assertEquals(parsed.warnings.toString(), z.size, parsed.airspaces.size)
+        return parsed.airspaces
+    }
+
+    private fun ft(m: Double) = "${(m / Atmosphere.FT).toInt()}ft AMSL"
+
+    @Test fun inAZoneUnderAnAreaWarnsOnceForEachRealChange() {
+        // Launch inside a zone (A) whose top is 700 m above launch, under an area (B) starting
+        // there: Queenstown in miniature. The sim climbs 1000 m, through A's top into B.
+        val heard = ArrayList<Pair<String, AlertLevel>>()
+        var warnedBelowFloorM = Double.NaN
+        val ceilingLevels = ArrayList<CeilingLevel>()
+        var enteredBAtS = Double.NaN
+        val notes = ArrayList<String>()
+        fly(setup = { c, sim ->
+            val top = ft(sim.groundElevM + 700)
+            c.setAirspace(AirspaceIndex(zones(sim, Triple("ZONE A", "GND", top), Triple("AREA B", top, "FL195"))))
+            c.onAlert = { e ->
+                heard.add(e.status.airspace.name to e.status.level)
+                if (e.status.airspace.name == "AREA B" && e.status.level == AlertLevel.APPROACHING) warnedBelowFloorM = e.status.verticalM
+            }
+        }, eachFix = { c, sim ->
+            if (ceilingLevels.lastOrNull() != c.ceilingLevel) ceilingLevels.add(c.ceilingLevel)
+            if (enteredBAtS.isNaN() && c.statuses.any { it.airspace.name == "AREA B" && it.level == AlertLevel.INSIDE }) enteredBAtS = sim.timeS
+            c.info?.let { n -> "in ${n.entered.map { it.name }} left ${n.left.map { it.name }}".let { if (notes.lastOrNull() != it) notes.add(it) } }
+        })
+        // Inside A from the start: that is the first thing said.
+        assertEquals(heard.toString(), "ZONE A" to AlertLevel.INSIDE, heard.first())
+        // Climbing to A's top is announced as approaching B (one boundary, one warning), before
+        // reaching it, and then B itself.
+        val i = heard.indexOf("AREA B" to AlertLevel.APPROACHING)
+        assertTrue(heard.toString(), i > 0 && heard.indexOf("AREA B" to AlertLevel.INSIDE) > i)
+        assertTrue("warned $warnedBelowFloorM m below the floor", warnedBelowFloorM > 20)
+        assertTrue(heard.toString(), heard.none { it.first == "ZONE A" && it.second == AlertLevel.CEILING })
+        // Leaving A upwards never sounds like approaching A.
+        assertTrue(heard.toString(), heard.none { it == "ZONE A" to AlertLevel.APPROACHING })
+        // Nothing is said twice in a row about the same thing, and not much is said at all.
+        assertTrue(heard.toString(), heard.zipWithNext().none { (x, y) -> x == y })
+        assertTrue(heard.toString(), heard.size <= 6)
+        // The altitude display went amber, then red, on the way up.
+        assertTrue(ceilingLevels.toString(), ceilingLevels.indexOf(CeilingLevel.AMBER) in 0 until ceilingLevels.indexOf(CeilingLevel.RED))
+        assertTrue(!enteredBAtS.isNaN())
+        // Gliding back down out of B into A is not an alert, but it is shown.
+        assertTrue(notes.toString(), notes.contains("in [ZONE A] left [AREA B]"))
+    }
+
+    @Test fun ceilingOfTheZoneWarnsEarlierWithoutABarometer() {
+        // Only a zone, top 700 m above launch: its top is the limit.
+        fun firstCeilingWarningBelowTop(baro: Boolean): Double {
+            var below = Double.NaN
+            val r = fly(baro = baro, setup = { c, sim ->
+                c.setAirspace(AirspaceIndex(zones(sim, Triple("ZONE A", "GND", ft(sim.groundElevM + 700)))))
+                c.onAlert = { e -> if (below.isNaN() && e.status.level == AlertLevel.CEILING) below = e.status.verticalM }
+            })
+            assertTrue(r.computer.positionError.mslM > 0)
+            return below
+        }
+        val withBaro = firstCeilingWarningBelowTop(true)
+        val gpsOnly = firstCeilingWarningBelowTop(false)
+        assertTrue("with barometer: $withBaro m below the top", withBaro > 20)
+        assertTrue("GPS only $gpsOnly m vs barometer $withBaro m", gpsOnly > withBaro)
     }
 
     private fun dms(deg: Double): String {

@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 import app.cloudbase.Hub
+import app.cloudbase.core.CeilingLevel
 import app.cloudbase.core.Geo
 import app.cloudbase.core.airspace.Airspace
 import app.cloudbase.core.airspace.AlertLevel
@@ -23,7 +24,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * The view from the side: a vertical slice through the air along the direction of travel, with
+ * The view from the side: a vertical slice through the air along the glider's heading
+ * ([app.cloudbase.core.FlightComputer.heading], so it holds still while circling), with
  * the terrain below, airspace as blocks, and the glider's projected path. Answers "how much
  * room do I have above me, and what am I about to fly into?".
  *
@@ -78,12 +80,13 @@ class SideView(context: Context) : View(context) {
         val f = c.fix
         if (f == null || c.altMsl.isNaN()) { hasData = false; invalidate(); return }
         hasData = true
-        // Keep looking the way we were last going when the track becomes unknown (stopped, or parked into wind).
-        if (!f.track.isNaN() && f.speed > 1.5) bearing = f.track
+        // The same heading the airspace warnings project, so the dashed line shows what they predict.
+        val hd = c.heading
+        if (!hd.trackDeg.isNaN()) bearing = hd.trackDeg
         altMsl = c.altMsl
         stdToMsl = if (c.pressureAlt.isNaN()) 0.0 else c.altMsl - c.pressureAlt
-        speed = f.speed
-        climb = c.climb.let { if (it.isNaN()) 0.0 else it }
+        speed = hd.speed
+        climb = hd.climb
 
         val start = Geo.destination(f.lat, f.lon, bearing + 180.0, backM)
         var lo = altMsl
@@ -114,7 +117,7 @@ class SideView(context: Context) : View(context) {
 
         val u = Units(Hub.settings)
         val h = c.headroom
-        val inside = c.statuses.firstOrNull { it.level == AlertLevel.INSIDE }
+        val inside = c.statuses.firstOrNull { it.level >= AlertLevel.INSIDE }
         if (inside != null) {
             headline = "Inside ${AirspaceStyle.title(inside.airspace)}"
             headlineColor = Theme.DANGER
@@ -123,10 +126,11 @@ class SideView(context: Context) : View(context) {
             headlineColor = Theme.MUTED
         } else {
             headline = "${u.altWithUnit(h.second)} below ${AirspaceStyle.title(h.first)} (${h.first.lower.text})"
-            headlineColor = when {
-                h.second < Hub.settings.verticalMarginM -> Theme.DANGER
-                h.second < 3 * Hub.settings.verticalMarginM -> Theme.WARN
-                else -> Theme.TEXT
+            // Same judgement as the altitude box: time to it at this climb, allowing for altitude error.
+            headlineColor = if (c.ceiling?.airspace !== h.first) Theme.TEXT else when (c.ceilingLevel) {
+                CeilingLevel.RED -> Theme.DANGER
+                CeilingLevel.AMBER -> Theme.WARN
+                CeilingLevel.NONE -> Theme.TEXT
             }
         }
         invalidate()

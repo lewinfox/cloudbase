@@ -8,7 +8,14 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-enum class AlertLevel { NONE, NEAR, IMMINENT, INSIDE }
+/**
+ * How bad things are with one airspace, least to worst. Each step up is announced once.
+ *  - APPROACHING: you could be in it within the warning time on your present course and climb,
+ *    allowing for how far off the position and altitude could be (or you could be in it already).
+ *  - INSIDE: you are in it.
+ *  - CEILING: you are in it and could go out through its top within the warning time.
+ */
+enum class AlertLevel { NONE, APPROACHING, INSIDE, CEILING }
 
 enum class VerticalRelation { BELOW, WITHIN, ABOVE }
 
@@ -19,17 +26,41 @@ class AirspaceStatus(
     val relation: VerticalRelation,
     /** 0 when laterally inside, else metres to the boundary. */
     val horizontalM: Double,
-    /** 0 when WITHIN; metres up to the floor when BELOW; metres down to the ceiling when ABOVE. */
+    /**
+     * 0 when WITHIN (CEILING: metres up to the top); metres up to the floor when BELOW; metres down
+     * to the ceiling when ABOVE.
+     */
     val verticalM: Double,
-    /** Seconds until predicted entry, NaN if none predicted (always NaN unless IMMINENT). */
+    /**
+     * APPROACHING and CEILING: seconds until the boundary, less the position error; 0 when within
+     * the error already. NaN otherwise.
+     */
     val timeToEntryS: Double,
 )
 
+/** The next limit above the aircraft: [metres] up to it, and how far off that figure could be. */
+class Ceiling(val airspace: Airspace, val limit: AltLimit, val metres: Double, val errorM: Double)
+
 class MonitorConfig(
-    val horizontalMarginM: Double = 300.0,
-    val verticalMarginM: Double = 100.0,
+    /** How much warning the pilot wants: seconds to the boundary at which to warn. */
     val lookaheadS: Double = 60.0,
 )
+
+/**
+ * How far off our position could be (about 95 %, metres): horizontally, and vertically in each
+ * datum an airspace limit can use. Every boundary is treated as this much closer than it looks.
+ */
+data class PositionError(val horizontalM: Double, val mslM: Double, val stdM: Double, val gndM: Double) {
+    fun vertical(ref: AltRef): Double = when (ref) {
+        AltRef.MSL -> mslM
+        AltRef.STD -> stdM
+        AltRef.GND -> gndM
+    }
+
+    companion object {
+        val NONE = PositionError(0.0, 0.0, 0.0, 0.0)
+    }
+}
 
 /**
  * The once-a-second proximity check. Not thread-safe: call from one thread.
@@ -53,6 +84,7 @@ class AirspaceMonitor(
     /** Straight-line motion over the lookahead window, computed once per evaluation. */
     private class Motion(
         val horizontal: Boolean,
+        val speed: Double,
         val vEast: Double,
         val vNorth: Double,
         val vario: Double,
@@ -63,8 +95,10 @@ class AirspaceMonitor(
     )
 
     /**
-     * All ALERT-relevance airspaces with level != NONE, worst first (INSIDE, then IMMINENT by
-     * time, then NEAR by distance).
+     * All ALERT-relevance airspaces with level != NONE, worst first (CEILING, INSIDE, then
+     * APPROACHING soonest first). [trackDeg] and [groundSpeed] are the motion to project: the
+     * caller smooths them while circling, when the present heading says nothing about where the
+     * glider is going. [vario] likewise should be a climb rate averaged over several seconds.
      */
     fun evaluate(
         lat: Double,
@@ -73,18 +107,21 @@ class AirspaceMonitor(
         trackDeg: Double,
         groundSpeed: Double,
         vario: Double,
+        err: PositionError = PositionError.NONE,
     ): List<AirspaceStatus> {
         val cands = candidates
         if (cands.isEmpty()) return emptyList()
         val speed = if (groundSpeed.isNaN() || groundSpeed < 0.0) 0.0 else groundSpeed
         val horizontal = speed >= 1.0 && !trackDeg.isNaN()
         val lookahead = config.lookaheadS
-        // Never look further than the aircraft can travel (plus the margin): the bbox pre-reject.
-        val reachM = (max(config.horizontalMarginM, if (horizontal) speed * lookahead else 0.0)) * 1.05 + 10.0
+        val hErr = err.horizontalM
+        // Never look further than the aircraft can travel (plus the error): the bbox pre-reject.
+        val reachM = ((if (horizontal) speed * lookahead else 0.0) + hErr) * 1.05 + 10.0
         val degPerMLat = 1.0 / (Geo.EARTH_R * Geo.DEG)
         val dt = if (horizontal) min(SAMPLE_S, SAMPLE_M / speed) else SAMPLE_S
         val motion = Motion(
             horizontal = horizontal,
+            speed = speed,
             vEast = if (horizontal) speed * sin(trackDeg * Geo.DEG) else 0.0,
             vNorth = if (horizontal) speed * cos(trackDeg * Geo.DEG) else 0.0,
             vario = if (vario.isNaN()) 0.0 else vario,
@@ -105,23 +142,73 @@ class AirspaceMonitor(
             val inside = bboxM == 0.0 && a.contains(lat, lon)
 
             val status: AirspaceStatus? = if (inside && relation == VerticalRelation.WITHIN) {
-                AirspaceStatus(a, AlertLevel.INSIDE, relation, 0.0, 0.0, Double.NaN)
+                val top = timeToTopS(a, alt, motion.vario, err)
+                if (top.isNaN()) AirspaceStatus(a, AlertLevel.INSIDE, relation, 0.0, 0.0, Double.NaN)
+                else AirspaceStatus(a, AlertLevel.CEILING, relation, 0.0, a.upper.metres - alt.inRef(a.upper.ref), top)
             } else {
-                val t = predictEntryS(a, lat, lon, alt, motion, inside)
-                if (!t.isNaN()) {
-                    AirspaceStatus(a, AlertLevel.IMMINENT, relation, if (inside) 0.0 else a.distanceToBoundary(lat, lon), verticalM, t)
-                } else if (verticalM <= config.verticalMarginM && bboxM <= config.horizontalMarginM) {
-                    val h = if (inside) 0.0 else a.distanceToBoundary(lat, lon)
-                    if (h <= config.horizontalMarginM) AirspaceStatus(a, AlertLevel.NEAR, relation, h, verticalM, Double.NaN) else null
-                } else {
-                    null
-                }
+                val h = if (inside) 0.0 else if (bboxM > hErr && !horizontal) Double.POSITIVE_INFINITY else a.distanceToBoundary(lat, lon)
+                val nearNow = h <= hErr
+                val t = if (nearNow && withinBand(a, alt, 0.0, err)) 0.0 else predictEntryS(a, lat, lon, alt, motion, nearNow, err)
+                if (t.isNaN()) null else AirspaceStatus(a, AlertLevel.APPROACHING, relation, h, verticalM, t)
             }
             if (status != null) (result ?: ArrayList<AirspaceStatus>().also { result = it }).add(status)
         }
         val r = result ?: return emptyList()
+        dedupeCeilings(r, err)
         r.sortWith(WORST_FIRST)
         return r
+    }
+
+    /**
+     * Where the top of one airspace is the floor of the next (a control zone under a control
+     * area), climbing to it is one event, not two: it is announced as approaching the airspace
+     * above, and the zone you are in stays plain INSIDE.
+     */
+    private fun dedupeCeilings(r: ArrayList<AirspaceStatus>, err: PositionError) {
+        for (i in r.indices) {
+            val c = r[i]
+            if (c.level != AlertLevel.CEILING) continue
+            val tol = err.vertical(c.airspace.upper.ref) + SAME_LEVEL_M
+            val above = r.any {
+                it.level == AlertLevel.APPROACHING && it.relation == VerticalRelation.BELOW && it.horizontalM == 0.0 &&
+                    abs(it.verticalM - c.verticalM) <= tol
+            }
+            if (above) r[i] = AirspaceStatus(c.airspace, AlertLevel.INSIDE, c.relation, 0.0, 0.0, Double.NaN)
+        }
+    }
+
+    /**
+     * Seconds until the top of [a] (which we are inside), less the vertical error: 0 if within the
+     * error already, NaN if not within the lookahead or the top is unlimited.
+     */
+    private fun timeToTopS(a: Airspace, alt: AircraftAlt, vario: Double, err: PositionError): Double {
+        if (a.upper.isUnlimited) return Double.NaN
+        val clear = a.upper.metres - alt.inRef(a.upper.ref) - err.vertical(a.upper.ref)
+        if (clear.isNaN()) return Double.NaN
+        if (clear <= 0.0) return 0.0
+        if (vario <= 0.0) return Double.NaN
+        val t = clear / vario
+        return if (t <= config.lookaheadS) t else Double.NaN
+    }
+
+    /**
+     * The next boundary above: the top of the airspace you are in or the lowest floor overhead,
+     * whichever is lower. Null when there is none (or altitude is unknown).
+     */
+    fun ceiling(lat: Double, lon: Double, alt: AircraftAlt, err: PositionError = PositionError.NONE): Ceiling? {
+        var best: Ceiling? = null
+        for (a in candidates) {
+            val gap = verticalGap(a, alt, 0.0)
+            val limit = when {
+                gap < 0.0 -> a.lower
+                gap == 0.0 && !a.upper.isUnlimited -> a.upper
+                else -> continue
+            }
+            val m = limit.metres - alt.inRef(limit.ref)
+            if (!(m >= 0.0) || (best != null && m >= best.metres)) continue
+            if (a.contains(lat, lon)) best = Ceiling(a, limit, m, err.vertical(limit.ref))
+        }
+        return best
     }
 
     /** The lowest ALERT airspace floor above the aircraft at this position: (airspace, metres of headroom), or null. */
@@ -157,17 +244,33 @@ class AirspaceMonitor(
         return 0.0
     }
 
+    /** Between the limits, or outside them by no more than the vertical error, after climbing [dh]. */
+    private fun withinBand(a: Airspace, alt: AircraftAlt, dh: Double, err: PositionError): Boolean {
+        val g = verticalGap(a, alt, dh)
+        return when {
+            g < 0.0 -> -g <= err.vertical(a.lower.ref)
+            g > 0.0 -> g <= err.vertical(a.upper.ref)
+            else -> true
+        }
+    }
+
     /**
-     * First sampled time within the lookahead at which the straight-line prediction is inside the
-     * airspace both laterally and vertically, or NaN. Terrain and the msl/pressure offset are held
-     * at their current values. Without a usable track only vertical entry is predicted.
+     * First sampled time within the lookahead at which the straight-line prediction could be
+     * inside the airspace given the position error, or NaN. Laterally the error is added along
+     * the track (the boundary is reached that much sooner); vertically the band is widened by
+     * it. Terrain and the msl/pressure offset are held at their current values. Without a usable
+     * track only vertical entry is predicted, and only where we already are (within the error).
      */
-    private fun predictEntryS(a: Airspace, lat: Double, lon: Double, alt: AircraftAlt, m: Motion, insideNow: Boolean): Double {
-        if (!m.horizontal && !insideNow) return Double.NaN
+    private fun predictEntryS(a: Airspace, lat: Double, lon: Double, alt: AircraftAlt, m: Motion, nearNow: Boolean, err: PositionError): Double {
+        if (!m.horizontal && !nearNow) return Double.NaN
+        val ext = if (m.horizontal) err.horizontalM / m.speed else 0.0
         for (k in 1..m.steps) {
             val t = min(k * m.dt, config.lookaheadS)
-            if (verticalGap(a, alt, m.vario * t) != 0.0) continue // cheap test first
-            if (m.horizontal && !a.contains(lat + m.vNorth * t * m.degPerMLat, lon + m.vEast * t * m.degPerMLon)) continue
+            if (!withinBand(a, alt, m.vario * t, err)) continue // cheap test first
+            if (m.horizontal) {
+                val tt = t + ext
+                if (!a.contains(lat + m.vNorth * tt * m.degPerMLat, lon + m.vEast * tt * m.degPerMLon)) continue
+            }
             return t
         }
         return Double.NaN
@@ -178,11 +281,13 @@ class AirspaceMonitor(
         const val SAMPLE_S = 2.0
         const val SAMPLE_M = 30.0
 
+        /** Metres within which a zone's top and the floor above it count as the same boundary. */
+        const val SAME_LEVEL_M = 15.0
+
         val WORST_FIRST = Comparator<AirspaceStatus> { x, y ->
             when {
                 x.level != y.level -> y.level.ordinal - x.level.ordinal
-                x.level == AlertLevel.IMMINENT -> x.timeToEntryS.compareTo(y.timeToEntryS)
-                x.level == AlertLevel.NEAR -> x.horizontalM.compareTo(y.horizontalM)
+                x.level == AlertLevel.APPROACHING || x.level == AlertLevel.CEILING -> x.timeToEntryS.compareTo(y.timeToEntryS)
                 else -> 0
             }
         }

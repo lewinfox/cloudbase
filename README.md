@@ -22,9 +22,11 @@ Plug the phone in over USB with USB debugging on, then:
 make install
 ```
 
-That finds (or downloads) the Android SDK, builds a release APK, installs it with its
-permissions granted, exempts it from battery optimisation and opens it. Needs JDK 17+ and
-Android 8 or newer. `make` lists the other targets (`test`, `screenshots`, `logs`…).
+That builds a release APK, installs it with its permissions granted, exempts it from battery
+optimisation and opens it. The build runs in a docker (or podman) container with Java and the
+Android SDK, so the host needs neither; the first build makes the image (a few minutes). The
+host only needs `adb`, downloaded into `.android-sdk/` if it isn't installed. Needs Android 8
+or newer on the phone. `make` lists the other targets (`test`, `screenshots`, `logs`…).
 
 First launch, with a data connection: it downloads New Zealand airspace by itself. Then open
 **≡ → Offline maps**, frame your flying area on the map, and download it, so the map and
@@ -58,11 +60,19 @@ blocks at their real heights, your projected path, and the headline number — h
 next airspace floor you are. It shows from the ground to just past the next boundary above you
 (the floor overhead, or the top of the airspace you are in) and opens up as you cross each one. Tap to change the range (2, 5, 10 km).
 
-**Alerts.** A banner, a tone and (optionally) a spoken warning when you are *near* an airspace
-(amber), *about to enter* one on your present track and climb (red, with seconds to go), or
-*inside* one. Margins and look-ahead time are in Settings. An alert that stays true repeats
-three times and then goes quiet (the banner stays); if you fly a site that sits inside a
-control zone by local arrangement, press and hold on the zone and choose Ignore.
+**Alerts.** A band under the instruments, a tone and (optionally) a spoken warning, once, each
+time something changes: you are *approaching* an airspace (amber: you could be in it within the
+warning time, 60 s by default, on your present course and climb), you are *inside* one (red,
+including at start-up), or you could go out through the *top* of the one you are in within the
+warning time (red). Every boundary counts as closer by however far off the GPS could be, so a
+poor fix warns earlier, and a barometer, which pins altitude down much better, warns later.
+Nothing repeats, and getting less bad is silent: crossing from one zone into the next does not
+announce the one you just left, nor does weaving along the line between them. Dropping through
+the floor of one airspace into another (an area into the zone below it) gets a blue note
+instead, for 30 s, with no sound. Dismiss the band
+with ✕ or a swipe left; it comes back only if that airspace gets worse. The altitude box turns
+amber as the next limit above comes within twice the warning time, and red within it. If a zone
+does not concern you at all, press and hold on it and choose Ignore.
 
 **Flight log.** Starts at takeoff and stops at landing. Files are in **≡ → Flights**; tap one
 to share or upload it.
@@ -135,10 +145,12 @@ to share or upload it.
 
 - `core/` — pure Kotlin, no Android, all the logic that can be wrong in the air: OpenAir
   parser, airspace geometry and alerting, vario filter, wind, thermal map, flight detection,
-  IGC, geoid, and `FlightComputer`, which ties them together. `./gradlew :core:test` (251
+  IGC, geoid, and `FlightComputer`, which ties them together. `./scripts/gradle.sh :core:test` (251
   tests) includes whole simulated flights through the full pipeline.
 - `app/` — Android: `FlightService` (GPS, sensors, demo), `map/` (tile view, cache, terrain
   elevation), `ui/` (instruments, overlays, side view, settings pages).
+- `scripts/` — `install.sh` (`make install`), `gradle.sh` (Gradle in the container from
+  `docker/Dockerfile`), `adb.sh` (find or fetch adb).
 - `tools/make_geoid.py` regenerates the geoid grid from the NGA EGM96 data.
 - `tools/make_preview_map.py` regenerates the map image behind the thermal-colour previews.
 

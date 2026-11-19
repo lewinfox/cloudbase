@@ -23,8 +23,7 @@ class Alerter(private val context: Context) {
 
     fun alert(e: AlertEvent, sound: Boolean, voice: Boolean) {
         if (sound) beep(e.status.level)
-        // Repeats are just the tone: hearing the same sentence every 15 s is how alerts get muted.
-        if (voice && !e.repeat) speak(phrase(e.status), delayMs = if (sound) 900 else 0)
+        if (voice) speak(phrase(e.status), delayMs = if (sound) 900 else 0)
     }
 
     private fun beep(level: AlertLevel) {
@@ -32,9 +31,8 @@ class Alerter(private val context: Context) {
             ToneGenerator(AudioManager.STREAM_ALARM, 100).also { tone = it }
         } catch (e: RuntimeException) { return } // no audio output available
         when (level) {
-            AlertLevel.NEAR -> t.startTone(ToneGenerator.TONE_PROP_BEEP2, 250)
-            AlertLevel.IMMINENT -> t.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 600)
-            AlertLevel.INSIDE -> t.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 800)
+            AlertLevel.APPROACHING -> t.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 600)
+            AlertLevel.INSIDE, AlertLevel.CEILING -> t.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 800)
             AlertLevel.NONE -> {}
         }
     }
@@ -68,18 +66,19 @@ class Alerter(private val context: Context) {
             // The spoken name is the place ("WELLINGTON"), not the designator, which is noise by ear.
             val parts = s.airspace.name.split(',').map { it.trim() }
             val what = (if (parts.size >= 2) parts.drop(1).joinToString(" ") else s.airspace.name).lowercase()
+            val secs = if (s.timeToEntryS.isNaN() || s.timeToEntryS < 1) "" else ", ${s.timeToEntryS.roundToInt()} seconds"
             return when (s.level) {
                 AlertLevel.INSIDE -> "Inside airspace, $what"
-                AlertLevel.IMMINENT -> {
-                    val t = s.timeToEntryS
+                AlertLevel.CEILING -> "Ceiling, $what$secs"
+                AlertLevel.APPROACHING -> {
                     val where = when (s.relation) {
-                        VerticalRelation.BELOW -> if (s.horizontalM == 0.0) "above you" else "ahead"
-                        VerticalRelation.ABOVE -> if (s.horizontalM == 0.0) "below you" else "ahead"
-                        VerticalRelation.WITHIN -> "ahead"
+                        VerticalRelation.BELOW -> if (s.horizontalM == 0.0) " above" else ""
+                        VerticalRelation.ABOVE -> if (s.horizontalM == 0.0) " below" else ""
+                        VerticalRelation.WITHIN -> ""
                     }
-                    if (t.isNaN()) "Airspace $where, $what" else "Airspace $where, $what, ${t.roundToInt()} seconds"
+                    "Approaching $what$where$secs"
                 }
-                else -> "Airspace nearby, $what"
+                AlertLevel.NONE -> ""
             }
         }
     }

@@ -12,7 +12,10 @@ data class Fix(
     val altMsl: Double,
     val speed: Double,
     val track: Double,
+    /** Receiver's horizontal accuracy, metres (68 %); NaN when it does not say. */
     val hAcc: Float = Float.NaN,
+    /** Receiver's vertical accuracy, metres (68 %); NaN when it does not say. */
+    val vAcc: Float = Float.NaN,
 )
 
 /** Wind as conventionally reported: the direction it blows FROM, degrees true, and speed in m/s. */

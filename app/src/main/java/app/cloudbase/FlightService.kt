@@ -28,7 +28,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import app.cloudbase.core.Fix
 import app.cloudbase.core.Geoid
-import app.cloudbase.core.flight.FlightEvent
 import app.cloudbase.core.Atmosphere
 import app.cloudbase.core.igc.IgcTrack
 import app.cloudbase.core.pressureAt
@@ -61,7 +60,8 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         Hub.init(this)
         alerter = Alerter(this)
         Hub.computer.onAlert = { e -> alerter.alert(e, Hub.settings.alertSound, Hub.settings.alertVoice) }
-        Hub.computer.onFlightEvent = { e -> onFlightEvent(e) }
+        Hub.computer.onFlightEvent = { onFlightStateChanged() }
+        Hub.computer.onRecordingChanged = { onFlightStateChanged() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -87,6 +87,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         Hub.computer.close()
         Hub.computer.onAlert = null
         Hub.computer.onFlightEvent = null
+        Hub.computer.onRecordingChanged = null
         alerter.shutdown()
         releaseWakeLock()
         Hub.serviceRunning = false
@@ -147,6 +148,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
                 // Below walking pace the receiver's bearing is noise.
                 track = if (loc.hasBearing() && speed > 0.7) loc.bearing.toDouble() else Double.NaN,
                 hAcc = acc,
+                vAcc = if (loc.hasVerticalAccuracy()) loc.verticalAccuracyMeters else Float.NaN,
             )
         )
         afterFix()
@@ -210,12 +212,15 @@ class FlightService : Service(), LocationListener, SensorEventListener {
     // --- housekeeping ----------------------------------------------------------------------
 
     private fun afterFix() {
-        if (Hub.computer.flightState == FlightState.FLYING) groundSince = 0L
+        if (busy()) groundSince = 0L
         else if (groundSince == 0L) groundSince = SystemClock.elapsedRealtime()
     }
 
-    private fun onFlightEvent(e: FlightEvent) {
-        if (e == FlightEvent.TAKEOFF) acquireWakeLock() else releaseWakeLock()
+    /** Airborne or logging (the record button works on the ground too). */
+    private fun busy() = Hub.computer.flightState == FlightState.FLYING || Hub.computer.recording
+
+    private fun onFlightStateChanged() {
+        if (busy()) acquireWakeLock() else releaseWakeLock()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, notification())
     }
 
@@ -230,7 +235,7 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         }
     }
 
-    /** Only while airborne: keeps sensors and logging alive with the screen off. */
+    /** Only while airborne or recording: keeps sensors and logging alive with the screen off. */
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -265,11 +270,17 @@ class FlightService : Service(), LocationListener, SensorEventListener {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, FlightService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val flying = Hub.computer.flightState == FlightState.FLYING
+        val recording = Hub.computer.recording
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
             .setColor(0xFF1E7FE0.toInt())
-            .setContentTitle(if (flying) "Flight in progress" else "Ready for takeoff")
-            .setContentText(if (flying && Hub.computer.recording) "Recording IGC log" else "Log starts automatically at takeoff")
+            .setContentTitle(if (flying) "Flight in progress" else if (recording) "Recording" else "Ready for takeoff")
+            .setContentText(when {
+                recording -> "Recording IGC log"
+                flying -> "Not recording"
+                Hub.settings.autoRecord -> "Log starts automatically at takeoff"
+                else -> "Press record in the app to log"
+            })
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())

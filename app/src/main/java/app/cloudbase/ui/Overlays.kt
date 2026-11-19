@@ -253,10 +253,11 @@ class AircraftOverlay(context: Context) : MapView.Overlay {
             canvas.drawLine(x, y, ix, iy, aheadPaint)
             canvas.drawLine(ix - cross, iy - cross, ix + cross, iy + cross, crossPaint)
             canvas.drawLine(ix - cross, iy + cross, ix + cross, iy - cross, crossPaint)
-        } else if (!f.track.isNaN() && f.speed > 2 && !c.circling) {
-            // No glide line (climbing, or switched off): show where we will be in a minute. Not
-            // while circling, when a straight line ahead means nothing.
-            val ahead = Geo.destination(f.lat, f.lon, f.track, f.speed * Hub.settings.lookaheadS)
+        } else if (!c.heading.trackDeg.isNaN() && c.heading.speed > 1.0) {
+            // No glide line (climbing, or switched off): where we will be after the warning time,
+            // on the heading the airspace warnings use. While circling that is the drift.
+            val h = c.heading
+            val ahead = Geo.destination(f.lat, f.lon, h.trackDeg, h.speed * Hub.settings.lookaheadS)
             canvas.drawLine(x, y, p.x(ahead.lon), p.y(ahead.lat), aheadPaint)
         }
         glider.rewind()
