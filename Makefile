@@ -1,5 +1,6 @@
 # Cloudbase. Run `make` for the list.
 .DEFAULT_GOAL := help
+.PHONY: help install install-debug build test screenshots run logs uninstall devices image clean
 
 help:
 	@echo "make install        build a release APK and install it on the USB-connected phone"
@@ -11,7 +12,8 @@ help:
 	@echo "make logs           stream the app's log from the phone"
 	@echo "make uninstall      remove the app from the phone"
 	@echo "make devices        list connected phones"
-	@echo "make sdk            find or download the Android SDK"
+	@echo "make image          build the container that runs Gradle (Java + Android SDK)"
+	@echo "Builds run in docker/podman; the host only needs adb."
 
 install:
 	@./scripts/install.sh
@@ -19,21 +21,20 @@ install:
 install-debug:
 	@VARIANT=debug ./scripts/install.sh
 
-build: sdk
-	./gradlew :app:assembleRelease
+build:
+	./scripts/gradle.sh :app:assembleRelease
 
-test: sdk
-	./gradlew :core:test :app:testDebugUnitTest
+test:
+	./scripts/gradle.sh :core:test :app:testDebugUnitTest
 
-screenshots: sdk
-	./gradlew :app:testDebugUnitTest -Pscreenshots --tests '*ScreenshotTest*'
+screenshots:
+	./scripts/gradle.sh :app:testDebugUnitTest -Pscreenshots --tests '*ScreenshotTest*'
 	@echo "→ docs/screenshots/"
 
+image:
+	./scripts/gradle.sh --version
 
-sdk:
-	@./scripts/sdk.sh >/dev/null
-
-ADB = "$(shell ./scripts/sdk.sh 2>/dev/null)/platform-tools/adb"
+ADB = "$(shell ./scripts/adb.sh)"
 
 run:
 	$(ADB) shell am start -n app.cloudbase/.MainActivity
@@ -48,4 +49,4 @@ devices:
 	$(ADB) devices -l
 
 clean:
-	./gradlew clean
+	./scripts/gradle.sh clean

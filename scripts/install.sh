@@ -13,16 +13,8 @@ amber=$'\033[38;5;214m'; red=$'\033[31m'; dim=$'\033[2m'; bold=$'\033[1m'; off=$
 say()  { printf '%s▸%s %s\n' "$amber" "$off" "$*"; }
 fail() { printf '%s✗ %s%s\n' "$red" "$*" "$off" >&2; exit 1; }
 
-# --- Java ------------------------------------------------------------------------------
-command -v java >/dev/null || fail "Java not found. Install JDK 17 or newer (e.g. 'brew install openjdk@17' or 'sudo apt install openjdk-17-jdk')."
-jv=$(java -version 2>&1 | awk -F'"' '/version/ {print $2}' | cut -d. -f1)
-[ "${jv:-0}" -ge 17 ] 2>/dev/null || fail "Java ${jv:-?} found; Android builds need 17 or newer."
-
-# --- Android SDK -----------------------------------------------------------------------
-SDK=$(./scripts/sdk.sh)
-ADB="$SDK/platform-tools/adb"
-[ -x "$ADB" ] || ADB=$(command -v adb || true)
-[ -n "$ADB" ] || fail "adb not found. Install Android platform-tools, or delete local.properties and run make sdk."
+# --- adb (the build itself runs in a container: scripts/gradle.sh) --------------------
+ADB=$(./scripts/adb.sh)
 
 # --- Find the phone --------------------------------------------------------------------
 "$ADB" start-server >/dev/null 2>&1 || true
@@ -73,7 +65,7 @@ say "Phone: ${bold}${model}${off}, Android ${release}${go}, API ${api}"
 # --- Build -----------------------------------------------------------------------------
 first=$(printf '%s' "${VARIANT:0:1}" | tr '[:lower:]' '[:upper:]')
 say "Building ${VARIANT}…"
-./gradlew --quiet ":app:assemble${first}${VARIANT:1}"
+./scripts/gradle.sh --quiet ":app:assemble${first}${VARIANT:1}"
 APK="app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
 [ -f "$APK" ] || fail "Build finished but $APK is missing."
 say "Built $APK ($(du -k "$APK" | cut -f1) KB)"
