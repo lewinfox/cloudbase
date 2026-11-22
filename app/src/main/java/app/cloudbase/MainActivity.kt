@@ -110,7 +110,8 @@ class MainActivity : Activity() {
         Hub.airspace.onChanged = { airspaceChanged(); page?.rebuild() }
 
         instruments = InstrumentBar(this)
-        side = SideView(this)
+        side = SideView(this) { map.projection.metresPerPixel }
+        map.onZoomChanged = { if (side.visibility == View.VISIBLE) side.refresh() }
         banner = AlertBanner(this) { Hub.computer.dismissBanner(); refresh() }
         chip = Theme.body(this, "", Theme.TEXT, 12.5f).apply {
             typeface = Theme.CONDENSED_BOLD

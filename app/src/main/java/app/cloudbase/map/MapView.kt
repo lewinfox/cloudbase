@@ -87,7 +87,15 @@ class MapView(context: Context, val layer: TileLayer, val source: TileSource) : 
     var centerLon: Double = 0.0
         set(v) { field = Geo.norm180(v); changed() }
     var zoom: Double = source.minZoom.toDouble()
-        set(v) { field = v.coerceIn(source.minZoom.toDouble(), maxZoom); changed() }
+        set(v) {
+            val z = v.coerceIn(source.minZoom.toDouble(), maxZoom)
+            val was = field
+            field = z
+            changed()
+            if (z != was) onZoomChanged?.invoke()
+        }
+    /** Called after [zoom] changes, by the user or by code. */
+    var onZoomChanged: (() -> Unit)? = null
 
     /** True while the map follows the aircraft; a user pan (or a zoom that moves the centre) clears it. */
     var follow: Boolean = true

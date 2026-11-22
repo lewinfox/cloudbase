@@ -58,7 +58,7 @@ shows where you will be in a minute instead).
 **Side view.** A slice through the air along your direction of travel: terrain, airspace as
 blocks at their real heights, your projected path, and the headline number — how far below the
 next airspace floor you are. It shows from the ground to just past the next boundary above you
-(the floor overhead, or the top of the airspace you are in) and opens up as you cross each one. Tap to change the range (2, 5, 10 km).
+(the floor overhead, or the top of the airspace you are in) and opens up as you cross each one. It is drawn at the map's scale, so zoom the map to see further ahead.
 
 **Alerts.** A band under the instruments, a tone and (optionally) a spoken warning, once, each
 time something changes: you are *approaching* an airspace (amber: you could be in it within the

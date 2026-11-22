@@ -29,9 +29,12 @@ import kotlin.math.min
  * the terrain below, airspace as blocks, and the glider's projected path. Answers "how much
  * room do I have above me, and what am I about to fly into?".
  *
+ * Its horizontal scale is the map's: [metresPerPixel] comes from the map, so a kilometre is
+ * the same width in both and zooming the map zooms this too.
+ *
  * The slice is recomputed once per GPS fix in [refresh]; onDraw only paints what was computed.
  */
-class SideView(context: Context) : View(context) {
+class SideView(context: Context, private val metresPerPixel: () -> Double) : View(context) {
     private val terrainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.TERRAIN }
     private val slabFill = Paint().apply { style = Paint.Style.FILL }
     private val slabEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = context.dp(1.5f) }
@@ -46,10 +49,9 @@ class SideView(context: Context) : View(context) {
     }
     private val path = Path()
 
-    /** Distance shown ahead of the glider, metres. Tap cycles through [RANGES]. */
-    private var rangeIndex = 0
-    private val rangeM get() = RANGES[rangeIndex]
-    private var bearing = 0.0
+    /** Ground distance across the plot, metres: the plot's width at the map's scale. */
+    private var spanM = 1.0
+    private var bearing = Double.NaN
     private val terrain = DoubleArray(SAMPLES) { Double.NaN }
     private var slabs: List<Slab> = emptyList()
     private var relevance: List<Relevance> = emptyList()
@@ -66,23 +68,25 @@ class SideView(context: Context) : View(context) {
 
     init {
         setBackgroundColor(Theme.BG)
-        setOnClickListener {
-            rangeIndex = (rangeIndex + 1) % RANGES.size
-            refresh()
-        }
     }
 
-    private val backM get() = rangeM * BEHIND
-    private val spanM get() = rangeM * (1 + BEHIND)
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = refresh()
+
+    /** Distance shown behind the glider, metres. */
+    private val backM get() = spanM * BEHIND
 
     fun refresh() {
         val c = Hub.computer
         val f = c.fix
         if (f == null || c.altMsl.isNaN()) { hasData = false; invalidate(); return }
+        val mpp = metresPerPixel()
+        if (width <= padL || mpp.isNaN() || mpp <= 0) { hasData = false; invalidate(); return }
+        spanM = (width - padL) * mpp
         hasData = true
         // The same heading the airspace warnings project, so the dashed line shows what they predict.
         val hd = c.heading
         if (!hd.trackDeg.isNaN()) bearing = hd.trackDeg
+        if (bearing.isNaN()) { hasData = false; invalidate(); return }
         altMsl = c.altMsl
         stdToMsl = if (c.pressureAlt.isNaN()) 0.0 else c.altMsl - c.pressureAlt
         speed = hd.speed
@@ -173,7 +177,7 @@ class SideView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         canvas.drawLine(0f, 0f, width.toFloat(), 0f, gridPaint)
         if (!hasData) {
-            canvas.drawText("Side view appears with a GPS fix", context.dp(12f), height / 2f, textPaint)
+            canvas.drawText("Side view appears with a GPS fix and a track", context.dp(12f), height / 2f, textPaint)
             return
         }
         val u = Units(Hub.settings)
@@ -245,7 +249,15 @@ class SideView(context: Context) : View(context) {
         }
         canvas.drawCircle(gx, gy, context.dp(5f), gliderPaint)
 
-        val range = if (rangeM >= 1000) "${(rangeM / 1000).toInt()} km ahead" else "${rangeM.toInt()} m ahead"
+        // The direction of the slice, so it can be matched to the map and the ground.
+        val dir = "${InstrumentBar.compass(bearing)} ${"%03d".format(Math.round(bearing).toInt() % 360)}°"
+        val aheadM = spanM - backM
+        val ahead = when {
+            aheadM >= 9_500 -> "${Math.round(aheadM / 1000)} km"
+            aheadM >= 1_000 -> "%.1f km".format(aheadM / 1000)
+            else -> "${(Math.round(aheadM / 50) * 50)} m"
+        }
+        val range = "$ahead ahead · $dir"
         val rangeX = width - textPaint.measureText(range) - context.dp(8f)
         canvas.drawText(range, rangeX, context.dp(15f), textPaint)
         headPaint.color = headlineColor
@@ -256,8 +268,7 @@ class SideView(context: Context) : View(context) {
     }
 
     companion object {
-        val RANGES = doubleArrayOf(5_000.0, 10_000.0, 2_000.0)
-        /** Fraction of the range also shown behind the glider. */
+        /** Fraction of the plot's width that is behind the glider. */
         const val BEHIND = 0.12
         const val SAMPLES = 64
         /** Sky shown above the glider when there is no airspace overhead. */
